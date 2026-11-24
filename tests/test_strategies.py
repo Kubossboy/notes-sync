@@ -144,9 +144,10 @@ def test_vwap_reclaim():
     assert s.entry > s.evidence["vwap"] > s.stop
 
 
-def test_news_momentum_requires_m4():
-    with pytest.raises(NoSetup, match="news"):
-        S.news_momentum(None, {})
+def test_news_momentum_without_news_engine_is_no_setup():
+    ctx = StrategyContext("NVDA", AssetClass.STOCK, "5m", pd.DataFrame(), news=None)
+    with pytest.raises(NoSetup, match="news engine unavailable"):
+        S.news_momentum(ctx, {})
 
 
 def test_trend_continuation_requires_uptrend():

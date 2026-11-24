@@ -128,3 +128,25 @@ def test_disabled_strategy(settings, db, monkeypatch):
     from app.data.models import AssetClass as A
     rep = Scanner(settings, sc.engine).run(A.STOCK, ["AAPL"], "research", now=NOW)
     assert rep["symbols"][0]["skipped"] == "no valid data"
+
+
+def test_scan_with_news_engine_vetoes_long_on_verified_negative_catalyst(settings, db, monkeypatch):
+    from app.config import Secrets
+    from app.intelligence.engine import NewsEngine
+    from app.intelligence.sources import FeedSource
+    from tests.fakes import FakeResp
+    from tests.test_news_engine import FakeSec, RouteSession, rss
+    sc, eng = make(settings, db, monkeypatch)
+    feed = FeedSource("kraken_status", "https://st.test/rss", 1, "crypto", "exchange")
+    ne = NewsEngine(settings, db, Secrets(), eng.safe, RouteSession({"https://st.test/rss": FakeResp(
+        200, text=rss(("Bitcoin withdrawals halted after exchange hacked, funds drained", NOW - timedelta(hours=1))))}),
+        [feed], FakeSec())
+    ne.ingest(NOW)
+    sc.news = ne
+    rep = sc.run(AssetClass.CRYPTO, ["BTC-USD"], "live", now=NOW)
+    sym = rep["symbols"][0]
+    assert sym["news"]["negative_high_verified"] == 1 and sym["sentiment"]["composite"] <= 0
+    sig = next(s for s in sym["signals"] if s["strategy"] == "momentum_breakout")
+    assert sig["status"] == "rejected" and "verified high-impact negative catalyst" in sig["reject_reason"]
+    row = db.conn.execute("SELECT news, sentiment FROM signal_scores WHERE signal_id=?", (sig["signal_id"],)).fetchone()
+    assert row["news"] is not None and row["sentiment"] is not None

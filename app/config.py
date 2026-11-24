@@ -165,6 +165,22 @@ class ScannerSection(_Strict):
     crypto_strategies: dict[str, StrategyToggle] = {}
 
 
+class NewsSection(_Strict):
+    enabled: bool = True
+    refresh_minutes: float = Field(15, gt=0)          # scanner re-ingests when older than this
+    max_health_age_minutes: float = Field(60, gt=0)   # older -> news component unavailable
+    min_source_success_ratio: float = Field(0.5, gt=0, le=1)
+    window_hours: float = Field(24, gt=0)
+    half_life_hours: float = Field(6, gt=0)
+    catalyst_hours: float = Field(16, gt=0)           # freshness for news-driven momentum
+    filings_lookback_days: int = Field(7, ge=1, le=60)
+    form4_per_ticker: int = Field(5, ge=0, le=20)
+    story_similarity: float = Field(0.45, gt=0, lt=1)
+    min_tag_confidence: float = Field(0.6, gt=0, le=1)  # summary-only mentions (0.45) don't count
+    no_news_score: float = Field(40, ge=0, le=100)    # verified "no catalyst" is weaker than neutral
+    halt_if_all_sources_fail: Literal[True] = True
+
+
 class HttpSection(_Strict):
     timeout_seconds: float = Field(10, gt=0, le=60)
     user_agent: str = "ATLAS-Trading-AI/0.1"
@@ -219,6 +235,7 @@ class Settings(_Strict):
     markets: MarketsSection = MarketsSection()
     data: DataSection = DataSection()
     scanner: ScannerSection = ScannerSection()
+    news: NewsSection = NewsSection()
     http: HttpSection = HttpSection()
 
     def config_hash(self) -> str:

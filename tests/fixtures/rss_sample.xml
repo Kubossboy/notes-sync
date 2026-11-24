@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>Synthetic test feed</title>
+<item><title>Nvidia beats estimates, raises guidance as data center revenue surges</title>
+<link>https://example.test/a</link><guid>a1</guid><pubDate>Mon, 23 Nov 2026 21:05:00 GMT</pubDate>
+<description><![CDATA[<p>NVIDIA Corp. reported record quarterly revenue.</p>]]></description></item>
+<item><title>Tesla shares fall after recall of 200,000 vehicles</title>
+<link>https://example.test/b</link><guid>b1</guid><pubDate>Mon, 23 Nov 2026 22:00:00 -0500</pubDate>
+<description>Safety regulator cites steering defect.</description></item>
+<item><title>Undated item</title><link>https://example.test/c</link></item>
+</channel></rss>

@@ -27,6 +27,8 @@ class StrategyContext:
     book_history: list[dict] = field(default_factory=list)
     now: datetime | None = None
     cost_bps_per_side: float = 0.0
+    news: dict | None = None            # NewsEngine.symbol_context (None = news engine off/unavailable)
+    sentiment: dict | None = None       # app.sentiment.aggregate.combine output
 
     @property
     def last(self) -> pd.Series:

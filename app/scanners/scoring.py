@@ -10,9 +10,12 @@ from dataclasses import dataclass, field
 
 from app.config import Settings
 from app.data.models import AssetClass
+from app.intelligence.engine import news_component
+from app.sentiment.aggregate import sentiment_component
 from app.strategies.base import Setup, StrategyContext, val
 
-PENDING = {"news": "news engine (milestone 4)", "sentiment": "sentiment engine (milestone 4)",
+PENDING = {"news": "news engine unavailable or stale (no healthy ingest within news.max_health_age_minutes)",
+           "sentiment": "unavailable while the news engine is not healthy",
            "quant": "statistical validation / backtests (milestone 6)"}
 
 
@@ -71,7 +74,7 @@ def cost_bps_per_side(settings: Settings, ac: AssetClass, spread_bps: float | No
     return base + (spread_bps / 2 if spread_bps else 0.0)
 
 
-def component_scores(ctx: StrategyContext, liquidity: dict) -> dict[str, float | None]:
+def component_scores(ctx: StrategyContext, liquidity: dict, news_cfg=None) -> dict[str, float | None]:
     last, prev = ctx.last, ctx.prev
     c = float(last["close"])
     checks = []
@@ -105,7 +108,18 @@ def component_scores(ctx: StrategyContext, liquidity: dict) -> dict[str, float |
     momentum = sum(mv) / len(mv) if mv else None
 
     return {"technical": technical, "momentum_volume": momentum, "liquidity": liquidity.get("score"),
-            "news": None, "sentiment": None, "quant": None}
+            "news": news_component(ctx.news, news_cfg) if news_cfg is not None else None,
+            "sentiment": sentiment_component(ctx.sentiment), "quant": None}
+
+
+def news_problems(ctx: StrategyContext, setup: Setup) -> list[str]:
+    """Fundamental vetoes: a long against a verified high-impact negative catalyst is rejected."""
+    n = ctx.news
+    if setup.direction == "long" and n and n["health"]["healthy"] and n["negative_high_verified"]:
+        e = n["negative_high_verified"][0]
+        return [f"verified high-impact negative catalyst ({', '.join(e['catalysts']) or e['impact']}): "
+                f"{e['title'][:80]} [{e['source']}]"]
+    return []
 
 
 def liquidity_assessment(ctx: StrategyContext, settings: Settings, spread_bps: float | None) -> dict:

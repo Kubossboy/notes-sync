@@ -12,6 +12,10 @@ class FakeResp:
         self.status_code, self._payload = status, payload
         self.text = text if text is not None else json.dumps(payload)
 
+    @property
+    def content(self):
+        return self.text.encode("utf-8") if isinstance(self.text, str) else self.text
+
     def json(self):
         if self._payload is None:
             raise ValueError("not json")

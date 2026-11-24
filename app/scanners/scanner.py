@@ -19,7 +19,8 @@ from app.data.orderbook import BookSnapshot, fetch_book
 from app.data.providers.base import ProviderError
 from app.database.db import utcnow
 from app.scanners.scoring import (PENDING, build_plan, component_scores, cost_bps_per_side,
-                                  liquidity_assessment, total_score)
+                                  liquidity_assessment, news_problems, total_score)
+from app.sentiment.aggregate import combine as combine_sentiment
 from app.strategies.base import NoSetup, StrategyContext
 from app.strategies.crypto import CRYPTO_STRATEGIES, liquidity_alert
 from app.strategies.stock import STOCK_STRATEGIES
@@ -29,9 +30,11 @@ log = get_logger("scanner")
 
 
 class Scanner:
-    def __init__(self, settings: Settings, engine: MarketDataEngine):
+    def __init__(self, settings: Settings, engine: MarketDataEngine, news=None):
         self.settings, self.engine, self.db = settings, engine, engine.db
         self.sc = settings.scanner
+        self.news = news            # NewsEngine or None (news/sentiment components then unavailable)
+        self._market_trend: str | None = None
 
     # ------------------------------------------------------------------ public
     def run(self, asset_class: AssetClass, symbols: list[str] | None = None, mode: str = "live",
@@ -44,6 +47,17 @@ class Scanner:
         run_id = self.db.insert("scan_runs", {
             "started_ts": utcnow(), "scanner": asset_class.value, "mode": mode, "timeframe": tf,
             "symbols": ",".join(symbols), "config_hash": self.settings.config_hash()})
+        news_info = None
+        if self.news is not None and self.settings.news.enabled:
+            try:
+                if now is None and self.news.needs_refresh():
+                    st = self.news.ingest()
+                    news_info = {"ingested": True, "ok": st["ok"], "failed": st["failed"], "new": st["new"]}
+            except Exception as e:      # news failure degrades the score, never crashes the scan
+                self.db.log_error("news", e)
+                news_info = {"ingested": False, "error": f"{type(e).__name__}: {e}"}
+            news_info = (news_info or {}) | {"health": self.news.health(now)}
+        self._market_trend = self._benchmark_trend(asset_class, tf, now)
         results = []
         for sym in symbols:
             try:
@@ -54,6 +68,7 @@ class Scanner:
         summary = {"run_id": run_id, "scanner": asset_class.value, "mode": mode, "timeframe": tf,
                    "symbols": results,
                    "signals": sum(len(r.get("signals", [])) for r in results),
+                   "news": news_info, "market_trend": self._market_trend,
                    "safe_state_halted": not self.engine.safe.trading_allowed()}
         self.db.conn.execute("UPDATE scan_runs SET finished_ts=?, summary_json=? WHERE id=?",
                              (utcnow(), json.dumps(summary, default=str), run_id))
@@ -103,8 +118,17 @@ class Scanner:
             except ProviderError:
                 pass
 
+        news_ctx = None
+        if self.news is not None and self.settings.news.enabled:
+            news_ctx = self.news.symbol_context(sym, ac.value, now or datetime.now(timezone.utc))
+        sentiment = combine_sentiment(news_ctx, df, self._market_trend)
         ctx = StrategyContext(sym, ac, tf, df, df_all if stock else None, levels, book, history,
-                              now, cost_bps_per_side(self.settings, ac, spread))
+                              now, cost_bps_per_side(self.settings, ac, spread), news_ctx, sentiment)
+        info["news"] = None if news_ctx is None else {
+            "events": news_ctx["events"], "aggregate": news_ctx["aggregate"], "healthy": news_ctx["health"]["healthy"],
+            "negative_high_verified": len(news_ctx["negative_high_verified"]),
+            "positive_catalysts": len(news_ctx["positive_catalysts"])}
+        info["sentiment"] = {"composite": sentiment["composite"], "conflicts": sentiment["conflicts"]}
         liq = liquidity_assessment(ctx, self.settings, spread)
         info["liquidity"] = {k: v for k, v in liq.items() if k != "problems"} | {"problems": liq["problems"]}
         info["last_bar"] = df.index[-1].isoformat()
@@ -142,9 +166,9 @@ class Scanner:
 
     def _finalize(self, setup, ctx, liq, fr, s, tf, mode, run_id) -> dict:
         plan = build_plan(setup, ctx, self.settings)
-        comps = component_scores(ctx, liq)
+        comps = component_scores(ctx, liq, self.settings.news)
         total, avail, on_avail = total_score(comps, self.settings)
-        problems = plan.problems + liq["problems"]
+        problems = plan.problems + liq["problems"] + news_problems(ctx, setup)
         missing = [k for k, v in comps.items() if v is None]
         if problems:
             status = "rejected"
@@ -162,6 +186,9 @@ class Scanner:
                     "data_source": s.source, "crosscheck": fr.crosscheck.verdict if fr.crosscheck else None,
                     "confidence": confidence, "trend": ctx.last.get("trend"),
                     "cost_bps_per_side": ctx.cost_bps_per_side,
+                    "news": None if ctx.news is None else {k: ctx.news[k] for k in (
+                        "aggregate", "events", "negative_high_verified", "positive_catalysts", "unexpected", "top")},
+                    "sentiment": ctx.sentiment, "market_trend": self._market_trend,
                     "note": "parameters are unvalidated hypotheses (validation in milestone 6)"}
         sig = {"strategy": setup.strategy, "symbol": setup.symbol, "direction": setup.direction,
                "entry": round(plan.entry, 6), "stop": round(plan.stop, 6), "target": round(plan.target, 6),
@@ -201,6 +228,21 @@ class Scanner:
             else:
                 raise
         return sig
+
+    def _benchmark_trend(self, ac: AssetClass, tf: str, now) -> str | None:
+        sym = "SPY" if ac == AssetClass.STOCK else "BTC-USD"
+        try:
+            fr = self.engine.get_candles(sym, tf, 300, now=now)
+            df = to_frame(fr.series.candles)
+            if ac == AssetClass.STOCK and "session" in df:
+                df = df[df["session"] == "regular"]
+            if len(df) < 60:
+                return None
+            t = compute_all(df, ac)["trend"].iloc[-1]
+            return t if isinstance(t, str) else None
+        except Exception as e:
+            self.db.log_event("benchmark_trend_unavailable", "scanner", f"{sym}: {e}", "warning")
+            return None
 
     # ------------------------------------------------------------------ order books
     def _book(self, sym, preferred) -> BookSnapshot | None:

@@ -1,43 +1,49 @@
 # PROJECT STATUS – ATLAS Trading AI
 
-_Last updated: 2026-11-24 (Europe/Prague)_
+_Last updated: 2026-11-24 (Europe/Prague) · version 0.4.0-m4_
 
 ## Current development phase
-Milestone 3 – Scanners and strategies: **complete**. Next: Milestone 4 – Intelligence (news, X, sentiment, catalysts).
+Milestone 4 – Intelligence: **complete**. Next: Milestone 5 – Risk engine and paper execution.
 
 ## Completed modules
 - M1 foundation: config (strict, paper-only), logging + redaction, SQLite journal (append-only), safety/SAFE STATE, probes, CLI.
-- M2 market data: Yahoo / Coinbase / Kraken / Binance providers, normalization, validation, freshness labels, cross-checks, cache, reliability.
-- M3:
-  - Alpaca market data (IEX) as 2nd stock source + Alpaca paper account probe (keys from env; disabled without keys)
-  - Public L2 order books (Coinbase, Kraken, Binance) with spread/depth/imbalance + snapshots
-  - Indicators: VWAP, RSI, MACD, EMA 9/20/50, SMA 200, ATR, RVOL (+ time-of-day RVOL), Bollinger, S/R, volume profile, breakouts, trend, candlestick patterns
-  - Stock strategies: Opening Range Breakout, VWAP Reclaim, Momentum Breakout, Relative Volume Anomaly, Trend Continuation, S/R Breakout, News Momentum (disabled until M4)
-  - Crypto strategies: Momentum Breakout, Volume Expansion, Order Book Imbalance, Volatility Expansion, Trend Continuation, S/R Breakout, Sudden Liquidity Change (+ liquidity-drop alert)
-  - Scoring 0-100 with configurable weights, cost-aware net R:R, stop sanity, liquidity filters, confidence
-  - Scanner (live + research dry-run), signal journal (signals, signal_scores, strategy_decisions, scan_runs), duplicate protection
-  - CLI: scan, signals; scripts/replay_signals.py
+- M2 market data: Yahoo / Coinbase / Kraken / Binance (+ Alpaca IEX) providers, validation, freshness labels, cross-checks, cache, reliability.
+- M3: indicators, L2 order books, 7 stock + 7 crypto strategies, cost-aware scoring, scanners, signal journal.
+- M4 intelligence:
+  - News intake from 15 free RSS/Atom feeds (tiers 1-3) + SEC EDGAR (8-K items, 10-Q/10-K/S-1/S-3/424B/13D/G, Form 4 insider transactions)
+  - Ticker tagging (cashtag / ticker / company & coin names, ambiguity rules, summary-only mentions down-weighted), MACRO and CRYPTO_MARKET tags
+  - Catalyst detection (~45 rules + 8-K item map; positive/negative, impact, unexpected flag, negation handling)
+  - Lexicon + rule sentiment per item; source / publication time / confidence on every event
+  - Dedup (content hash), story clustering, verification (primary source or ≥ 2 independent sources)
+  - Sentiment engine combining news, X (if token), price action + benchmark trend, volume anomaly, macro; conflict list; social clipping; negative-catalyst cap
+  - Scoring hookup: news (20 %) and sentiment (10 %) components; verified high-impact negative catalyst vetoes longs
+  - News-driven momentum strategy enabled
+  - X API v2 client gated on `X_BEARER_TOKEN` (absent → needs_credentials, never claims to monitor X)
+  - CLI: `news ingest | show SYMBOL | latest | macro | health`, `scan --no-news`; scanner auto-ingests when news > 15 min old
 
 ## Remaining tasks
-M4 intelligence → M5 risk engine + paper execution → M6 backtesting/validation → M7 dashboard → M8 live paper trading.
+M5 risk engine + paper execution → M6 backtesting/validation (quant component) → M7 dashboard → M8 live paper trading.
 
 ## Known bugs / limitations
-- All signals are `incomplete` or `rejected` by design until M4 (news/sentiment) and M6 (quant validation): max reachable score 55 < 60.
-- Strategy parameters are unvalidated hypotheses. Replay on ~3 days of real data: crypto setups fired but none reached net R:R ≥ 2 after 20 bps/side costs; stocks (NVDA, TSLA) had several that did. Not evidence of edge.
-- Stock live scan could not run on live data today (US market closed during all runs); stock strategies were exercised on real delayed data (research mode) and in unit tests.
-- Alpaca IEX feed: partial volume and wide after-hours quotes (excluded from consensus > 200 bps). Alpaca hourly bars are clock-aligned, Yahoo's are session-anchored, so 1h cross-checks rarely overlap.
-- Alpaca paper account shows the Alpaca default $100,000 equity; ATLAS will keep its own $1,000 ledger (decision for M5).
-- Order-book imbalance is a single snapshot and can be spoofed; liquidity-change needs ≥ 5 stored snapshots (builds up over scans).
-- NYSE calendar hard-coded 2025-2027.
+- Signals remain `incomplete` until the quant component (M6) exists: max reachable score 85; nothing is tradable yet by design.
+- Rule/lexicon NLP works on headlines + feed summaries only (no article bodies): misses nuance, sarcasm and complex negation (negated catalysts get direction 0). Spot checks found and fixed false positives (buyouts, "warp", "warns", Fed enforcement actions); more will exist.
+- Yahoo headline RSS includes many listicles/opinion pieces; they carry low weight but add noise. No earnings calendar yet (no free keyless source reachable: Nasdaq API timed out).
+- CNBC and GlobeNewswire RSS return 403 to scripts; not used.
+- Story clustering is title-similarity based (Jaccard ≥ 0.45); differently worded reports of the same event may stay separate (= unverified).
+- Dev database contains news rows from analyzer versions 0-2 (development iterations); only the current version (3) is read.
+- Exchange status pages announce future maintenance; such items are stored but excluded from context until their time.
+- Strategy parameters (incl. news momentum) are unvalidated hypotheses until M6.
+- Earlier limits unchanged: Alpaca IEX partial volume, NYSE calendar 2025-2027 only, order-book imbalance spoofable.
 
-## API integrations (probe 2026-11-24 ~09:40 Europe/Prague): 13/14 ok
+## API integrations (probe 2026-11-24 ~09:51 Europe/Prague): 13/14 ok
 Yahoo, Alpaca market data (IEX), Alpaca paper account (ACTIVE), Binance, Coinbase, Kraken, CoinGecko, SEC EDGAR ×3, Fed RSS, MarketWatch RSS, CoinDesk RSS: ok. X API v2: needs_credentials.
+News ingest (real, 2026-11-24 ~09:52): 16/16 sources ok (15 feeds + SEC), 436 items, 172 verified, 142 with a catalyst, 67 Form 4 transactions, 0 items without a publication time.
 
 ## Required credentials
-- Alpaca: set via env vars (present). - SEC contact e-mail: set in `.env`. - X API bearer token: missing (paid tier for search).
+- Alpaca: env vars (present). SEC contact e-mail: `.env` (set). X API bearer token: missing (paid tier for search). Finnhub/NewsAPI: not used (would need sign-ups).
 
 ## Test results
-Offline: 154 passed. Live (real APIs): 22 passed (incl. Alpaca data + paper account, Yahoo↔Alpaca cross-check, real order books, live crypto scan, research stock scan). Total 176 passed, 0 failed.
+Offline: 204 passed. Live (real APIs): 30 passed (incl. real feed parsing, SEC submissions + Form 4, full ingest, live crypto scan with news). 0 failed.
 
 ## Backtesting results
 None yet (Milestone 6).
@@ -47,10 +53,10 @@ No trades (execution arrives in M5). Simulated equity: $1,000.00.
 
 ## Current system configuration
 Paper only · internal_sim · $1,000 · 0.25 %/trade ($2.50) · daily loss 1 % ($10) · max 2 positions · R:R ≥ 2 (net of costs) ·
-leverage/margin off · min score 70 · weights 25/20/20/10/15/10 · stocks 5m / crypto 15m · crypto fee 10 bps + 10 bps slippage per side ·
-stock 0 fee + 5 bps slippage · target 2.5 R capped by resistance.
+leverage/margin off · min score 70 · weights 25/20/20/10/15/10 · stocks 5m / crypto 15m · crypto fee 10 bps + 10 bps slippage per side
+(pending Kubiqq's confirmation) · stock 0 fee + 5 bps slippage · target 2.5 R capped by resistance ·
+news: refresh 15 min, health ≤ 60 min & ≥ 50 % sources, window 24 h, half-life 6 h, catalyst freshness 16 h.
 
-## Next development priorities (Milestone 4)
-News ingestion (SEC 8-K/Form 4, Fed, RSS) with source/time/confidence, ticker tagging, catalyst detection,
-rule-based + lexicon sentiment, source verification and dedupe, X integration only if credentials exist,
-wire news/sentiment components into scoring and enable News-Driven Momentum.
+## Next development priorities (Milestone 5)
+Deterministic risk engine (position sizing from 0.25 % risk, daily loss limit, max positions, exposure, cooldowns, kill switch),
+internal paper execution simulator with fees/slippage, order tracking (order_requests/simulated_fills), portfolio & equity journal.

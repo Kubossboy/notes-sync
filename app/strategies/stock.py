@@ -129,7 +129,29 @@ def sr_breakout(ctx: StrategyContext, p: dict, name: str = "sr_breakout") -> Set
 
 
 def news_momentum(ctx: StrategyContext, p: dict) -> Setup:
-    raise NoSetup("requires the news intelligence engine (milestone 4)")
+    """Fresh positive catalyst (>= medium impact, confident) + the market confirming it:
+    close above VWAP, bullish bar, new N-bar high, strong time-of-day RVOL."""
+    n = ctx.news
+    need(n is not None and n["health"]["healthy"], "news engine unavailable or stale")
+    need(not n["negative_high_verified"], "verified high-impact negative catalyst present")
+    cats = [c for c in n["positive_catalysts"] if (c["confidence"] or 0) >= p.get("min_confidence", 0.6)]
+    need(bool(cats), "no fresh positive catalyst (>= medium impact, confidence >= "
+                     f"{p.get('min_confidence', 0.6)})")
+    d = ctx.df
+    lb = int(p.get("high_lookback", 6))
+    need(len(d) > lb + 1, "not enough bars")
+    last = ctx.last
+    vw, atr = req(last, "vwap") + req(last, "atr14")
+    need(last["close"] > vw, "close below VWAP (market not confirming the news)")
+    need(last["close"] > last["open"], "last bar not bullish")
+    prior_high = float(d["high"].iloc[-lb - 1:-1].max())
+    need(last["close"] > prior_high, f"no new {lb}-bar high")
+    rv = _rvol(last)
+    need(rv is not None and rv >= p.get("min_rvol", 2.0), f"rvol {rv} below {p.get('min_rvol', 2.0)}")
+    entry = float(last["close"])
+    stop = float(d["low"].iloc[-3:].min()) - 0.1 * atr
+    return Setup("news_momentum", ctx.symbol, "long", entry, stop, p.get("target_r", 2.5), {
+        "catalysts": cats[:3], "news_aggregate": n["aggregate"], "rvol": rv, "prior_high": prior_high})
 
 
 def premarket_context(ctx: StrategyContext) -> dict | None:

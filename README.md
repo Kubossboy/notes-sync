@@ -9,7 +9,7 @@ market-intelligence and **paper-trading-only** platform for US stocks and crypto
 > database constraints (`execution_mode` must equal `'paper'`). Nothing here can
 > place a real-money order.
 
-Current phase: **Milestone 3 – Scanners and strategies** (complete). See `PROJECT_STATUS.md`.
+Current phase: **Milestone 4 – Intelligence** (complete). See `PROJECT_STATUS.md`.
 
 ## Quick start
 
@@ -51,6 +51,26 @@ and confidence. Until the news/sentiment (M4) and validation (M6) modules exist,
 signals are `incomplete` (max reachable score 55 < 60 = "do not trade") or
 `rejected` (R:R < 2 after costs, bad stop, poor liquidity). No orders exist yet (M5).
 
+News, catalysts & sentiment (Milestone 4):
+
+```bash
+.venv/bin/python -m app.main news ingest        # fetch RSS/Atom + SEC filings/Form 4, tag, classify, verify, journal
+.venv/bin/python -m app.main news show NVDA     # 24 h context: aggregate sentiment, catalysts, verification, macro
+.venv/bin/python -m app.main news latest        # newest items: time, source, tier, verified, sentiment, impact, tickers
+.venv/bin/python -m app.main news macro         # Fed / rates / inflation / geopolitical items
+.venv/bin/python -m app.main news health        # last ingest age + source success ratio
+.venv/bin/python -m app.main scan --no-news     # scan without the news engine (news/sentiment then "incomplete")
+```
+
+The scanner re-ingests automatically when the last ingest is older than 15 min.
+Every news event keeps its source, publication time (never invented; missing
+times lower confidence) and a confidence value (source tier × time quality ×
+ticker-match confidence). A story is **verified** when it comes from a primary
+source (SEC, Fed, FDA, BLS, CFTC, exchange status pages) or from ≥ 2
+independent outlets. News and sentiment now feed the score (news 20 %, sentiment
+10 %); a verified high-impact negative catalyst vetoes longs. Quant validation
+(M6) is still missing, so signals stay `incomplete` (max 85).
+
 Other commands: `python -m app.main halt <reason>` (enter SAFE STATE: no new
 simulated trades) and `python -m app.main resume --by <name>` (journaled).
 
@@ -87,11 +107,16 @@ logs/  var/          runtime logs and the SQLite database (git-ignored)
 | Kraken public | crypto ticker | no |
 | CoinGecko | crypto market cap / supply | no (keyless tier, low limits) |
 | SEC EDGAR (submissions, 8-K, Form 4) | filings, insider disclosures | no (contact e-mail in User-Agent) |
-| Federal Reserve RSS | FOMC / macro | no |
-| MarketWatch, CoinDesk RSS | headlines | no |
+| Federal Reserve RSS (monetary + all press) | FOMC / macro (tier 1) | no |
+| BLS, FDA, SEC press, CFTC RSS | macro / regulatory (tier 1) | no |
+| Coinbase + Kraken status pages (Atom/RSS) | exchange incidents, maintenance, listings (tier 1) | no |
+| Yahoo Finance headline RSS (per ticker) | company news (tier 2) | no |
+| MarketWatch top + pulse, PR Newswire RSS | market news / press releases (tier 2) | no |
+| CoinDesk, Cointelegraph, Decrypt RSS | crypto news (tier 3) | no |
 | Alpaca market data (IEX feed) | 2nd stock source, bid/ask | keys set via env (paper account) |
 | Alpaca paper | paper account (execution in M5) | keys set via env |
-| X API v2 | social sentiment | **needs credentials (paid tier for search)** |
+| X API v2 recent search | social sentiment (tier 4, never verifies alone) | **needs credentials (paid tier for search)** – module inactive, ATLAS does not claim to monitor X |
+| Finnhub / NewsAPI | optional extra news | needs free keys – not used (no sign-ups) |
 
 ## Credentials
 

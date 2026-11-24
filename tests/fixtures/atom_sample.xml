@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"><title>Synthetic atom</title>
+<entry><title>Kraken: withdrawals paused for SOL during network upgrade</title>
+<link href="https://status.example.test/x"/><id>tag:x</id><updated>2026-11-24T06:30:00Z</updated>
+<summary>We are investigating delays.</summary></entry>
+</feed>

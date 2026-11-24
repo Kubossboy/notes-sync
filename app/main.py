@@ -70,6 +70,11 @@ def main(argv: list[str] | None = None) -> int:
     sc = sub.add_parser("scan"); sc.add_argument("--asset", choices=["stock", "crypto", "all"], default="all")
     sc.add_argument("--symbols", nargs="*"); sc.add_argument("--research", action="store_true")
     sc.add_argument("--json", action="store_true")
+    nw = sub.add_parser("news", help="news intelligence: ingest | show SYMBOL | latest | macro | health")
+    nw.add_argument("action", choices=["ingest", "show", "latest", "macro", "health"])
+    nw.add_argument("symbol", nargs="?")
+    nw.add_argument("--limit", type=int, default=15)
+    sc.add_argument("--no-news", action="store_true", help="scan without the news engine")
     sg = sub.add_parser("signals"); sg.add_argument("--limit", type=int, default=20)
     h = sub.add_parser("halt"); h.add_argument("reason", nargs="+")
     r = sub.add_parser("resume"); r.add_argument("--by", default="operator"); r.add_argument("--note", default="")
@@ -99,7 +104,11 @@ def main(argv: list[str] | None = None) -> int:
             from app.data.models import AssetClass
             from app.scanners.scanner import Scanner
             eng = MarketDataEngine(ctx.settings, ctx.db, ctx.safe_state, secrets=ctx.secrets)
-            scn = Scanner(ctx.settings, eng)
+            news = None
+            if not a.no_news and ctx.settings.news.enabled:
+                from app.intelligence.engine import NewsEngine
+                news = NewsEngine(ctx.settings, ctx.db, ctx.secrets, ctx.safe_state)
+            scn = Scanner(ctx.settings, eng, news)
             kinds = [AssetClass.STOCK, AssetClass.CRYPTO] if a.asset == "all" else [AssetClass(a.asset)]
             mode = "research" if a.research else "live"
             for k in kinds:
@@ -119,6 +128,12 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"  {r['symbol']:8} {r['data_status']:8} last={r['last_bar']} close={ind['close']} "
                           f"rsi={ind['rsi14']} trend={r['trend']} liq={r['liquidity'].get('score') and round(r['liquidity']['score'])} "
                           f"{'ALERT ' + r['liquidity_alert'] if r.get('liquidity_alert') else ''}")
+                    if r.get("news"):
+                        nn = r["news"]
+                        agg = None if nn["aggregate"] is None else round(nn["aggregate"], 2)
+                        print(f"     news: events={nn['events']} agg={agg} +cat={nn['positive_catalysts']} "
+                              f"neg_high_verified={nn['negative_high_verified']} healthy={nn['healthy']} | "
+                              f"sentiment={r['sentiment']['composite']} {'; '.join(r['sentiment']['conflicts'])}")
                     for sg_ in r["signals"]:
                         print(f"     SIGNAL {sg_['strategy']:24} {sg_['status']:10} entry={sg_['entry']} stop={sg_['stop']} "
                               f"target={sg_['target']} rr_net={sg_['rr_net']} score={sg_['score']} "
@@ -128,6 +143,32 @@ def main(argv: list[str] | None = None) -> int:
                         print(f"     -      {n:24} {why}")
             st = ctx.safe_state.status()
             print(f"SAFE STATE: {'HALTED - ' + st.reason if st.halted else 'normal'}")
+        elif a.cmd == "news":
+            from app.intelligence.engine import NewsEngine
+            ne = NewsEngine(ctx.settings, ctx.db, ctx.secrets, ctx.safe_state)
+            if a.action == "ingest":
+                st = ne.ingest()
+                for name, v in st["sources"].items():
+                    print(f"  {v['status']:18} {name:26} seen={v['seen']:4} new={v['new']:4} {v.get('error', '')}")
+                print(f"sources ok={st['ok']} failed={st['failed']} items seen={st['seen']} new={st['new']}")
+            elif a.action == "health":
+                print(json.dumps(ne.health(), indent=1))
+            elif a.action == "show":
+                if not a.symbol:
+                    print("usage: news show SYMBOL"); return 2
+                sym = a.symbol.upper()
+                print(json.dumps(ne.symbol_context(sym, "crypto" if sym.endswith("-USD") else "stock"),
+                                 indent=1, default=str))
+            else:
+                where = "WHERE tickers LIKE '%,MACRO,%'" if a.action == "macro" else ""
+                rows = ctx.db.conn.execute(
+                    f"SELECT published_ts, source, source_tier, verified, sentiment, impact, tickers, title "
+                    f"FROM news_events {where} ORDER BY COALESCE(published_ts, fetched_ts) DESC LIMIT ?",
+                    (a.limit,)).fetchall()
+                for r in rows:
+                    print(f"  {r['published_ts'] or '?':25} {r['source']:24} t{r['source_tier']} "
+                          f"{'V' if r['verified'] else '-'} s={r['sentiment']:+.2f} {r['impact'] or '-':6} "
+                          f"{(r['tickers'] or '').strip(','):20} {r['title'][:90]}")
         elif a.cmd == "signals":
             rows = ctx.db.conn.execute(
                 "SELECT s.id, s.ts, s.symbol, s.strategy, s.status, s.entry_price, s.stop_loss, s.take_profit, "

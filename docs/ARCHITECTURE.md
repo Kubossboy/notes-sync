@@ -47,3 +47,28 @@ MarketDataEngine.get_candles (live, valid)        crypto: + L2 order book snapsh
   -> component scores (technical, momentum/volume, liquidity; news/sentiment/quant pending)
   -> journal: signals, signal_scores, strategy_decisions, scan_runs, orderbook_snapshots
 ```
+
+## Intelligence (Milestone 4)
+
+```
+sources.FEEDS (RSS/Atom, tiered 1-4) ─┐
+SEC EDGAR submissions + Form 4 ───────┼─> intelligence.engine.NewsEngine.ingest
+X API v2 (only with X_BEARER_TOKEN) ──┘     dedupe (content hash incl. analyzer version)
+                                            -> tagging.TickerTagger (cashtag/ticker/name; summary-only mentions ×0.5)
+                                            -> catalysts.detect (≈45 rules + SEC 8-K item map, negation -> direction 0)
+                                            -> sentiment = 0.6 × catalyst direction + 0.4 × finance lexicon
+                                            -> confidence = tier × time quality × tag confidence
+                                            -> story clustering (Jaccard ≥ 0.45 within 36 h) -> verification
+                                            -> journal: news_events, sentiment_results, insider_transactions, news_ingest_runs
+NewsEngine.symbol_context(symbol, now)  -> 24 h half-life-weighted aggregate (one vote per story), catalysts,
+                                           verified negative high-impact list, macro / crypto-market backdrop
+sentiment.aggregate.combine             -> news 40 / X 15 / price action 25 / volume 10 / macro 10 (available only),
+                                           conflicts, social clipping, cap at 0 on verified negative catalyst
+scanners.scoring                        -> news component, sentiment component, long veto
+strategies.stock.news_momentum          -> fresh positive catalyst + VWAP / new high / RVOL confirmation
+```
+
+Failure handling: one source failing = warning (`system_events.news_source_failed`);
+health = last ingest ≤ 60 min old and ≥ 50 % of sources ok, otherwise the
+news and sentiment components are `None` (signal incomplete); **all** sources
+failing = SAFE STATE.
