@@ -40,3 +40,15 @@ def test_export_static_snapshot(settings, dash_db, tmp_path):
     blob = "".join(p.read_text() for p in out.rglob("*") if p.is_file())
     for bad in (str(tmp_path), "/workspace", "/home/", "sqlite3", ".secrets"):
         assert bad not in blob
+
+
+def test_static_page_has_live_price_layer(settings, dash_db, tmp_path):
+    from datetime import datetime, timedelta, timezone
+    from app.dashboard.charts import position_chart_svg
+    page = (export(settings, tmp_path / "s", "slug", settings.db_path, live_prices=False) / "index.html").read_text()
+    assert "api.exchange.coinbase.com/products/" in page and 'id="live"' in page and "SNAPSHOT prices" in page
+    assert "no free live stock feed" in page                          # stocks stay snapshot, labelled
+    t = datetime(2026, 11, 24, 9, tzinfo=timezone.utc)
+    svg = position_chart_svg([(t + timedelta(minutes=15 * i), 100, 101, 99, 100.5) for i in range(5)], 100, 98, 105, 100.5)
+    assert 'data-lo="' in svg and 'class="lcw"' in svg and 'class="lcb"' in svg and 'class="mk"' in svg
+    assert svg.count('class="lcw"') == 1                              # only the last candle is live-updated

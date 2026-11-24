@@ -128,3 +128,14 @@ Reversible technical decisions made during development. Newest last.
   position is then managed by the regular loop.
 - First use 2026-11-24 11:44 Prague: BTC-USD long on the CFTC staff advisory (crypto assets may count toward financial
   resources requirements, cftc.gov press release 9331-26, primary source).
+
+## D88 - Live prices on the public snapshot (browser-side)
+- The exported page polls Coinbase Exchange's public, keyless, CORS-enabled ticker (`api.exchange.coinbase.com/products/<SYM>/ticker`)
+  every 5 s from the viewer's browser and updates each open crypto position's price, unrealized P&L
+  ((px - entry) * qty - entry fees), last candle and mark on its chart, and equity / total / today P&L (+ sum qty * (px - snapshot mark)).
+  Positions, trades and history still come only from the box (state.json/top.html refresh every 60 s; publish every 5 min).
+- Header shows "LIVE prices (Coinbase, 5 s)"; on any fetch failure the page falls back to snapshot values, labelled.
+  Stocks: no free keyless CORS-friendly source -> snapshot price, labelled. Nothing secret is involved (public endpoint, no key).
+- Publish interval stays 5 min (~8,640 deploys / 30 days): Cloudflare's free-plan limit is 500 *builds* / month, which only counts
+  Pages CI builds (Git); direct uploads via `wrangler pages deploy` create no build (Cloudflare staff, community thread 494717 /
+  Discord #pages-help 2024). Retention: 100 most recent deployments + current production always kept, older ones deleted after 30 days.

@@ -31,6 +31,66 @@ setInterval(async () => {
 """
 
 # Static snapshot (Cloudflare Pages): re-fetch the sibling top.html + state.json, show snapshot age, warn when stale.
+# LIVE layer: every 5 s the BROWSER polls Coinbase Exchange's public, keyless, CORS-enabled ticker for open crypto
+# positions and updates price / unrealized P&L / last candle / equity. Positions themselves still come from the box.
+# Stocks: no free keyless CORS source -> snapshot price, labelled. Any fetch failure -> snapshot values, labelled.
+LIVE_JS = """
+const fmt = (v, d) => v.toLocaleString('en-US', {minimumFractionDigits: d, maximumFractionDigits: d});
+const usd = v => (v < 0 ? '$-' : '$') + fmt(Math.abs(v), 2);
+const cls = (el, v) => { el.classList.remove('pos', 'neg'); if (v > 0) el.classList.add('pos'); else if (v < 0) el.classList.add('neg'); };
+const LIVE = {};
+function applyLive() {
+  let delta = 0, live = 0, total = 0;
+  document.querySelectorAll('section.posbox[data-sym]').forEach(sec => {
+    total++;
+    const d = sec.dataset, qty = +d.qty, entry = +d.entry, mark = +d.mark, fees = +d.fees;
+    const tag = sec.querySelector('.lv-tag'), px = LIVE[d.sym];
+    if (d.ac !== 'crypto') { tag.className = 'lv-tag tag warn'; tag.textContent = 'snapshot price (no free live stock feed)'; return; }
+    if (!px) { tag.className = 'lv-tag tag warn'; tag.textContent = 'snapshot price (live feed unavailable)'; return; }
+    live++; delta += qty * (px.price - mark);
+    tag.className = 'lv-tag tag ok'; tag.textContent = 'LIVE ' + new Date(px.t).toLocaleTimeString();
+    sec.querySelector('.lv-now').textContent = fmt(px.price, 4);
+    const u = (px.price - entry) * qty - fees, ue = sec.querySelector('.lv-u');
+    ue.querySelector('b').textContent = usd(u); cls(ue, u);
+    const svg = sec.querySelector('svg.chart'); if (!svg) return;
+    const s = svg.dataset, lo = +s.lo, hi = +s.hi, pt = +s.pt, h = +s.h, pb = +s.pb;
+    const y = p => pt + (hi - Math.min(Math.max(p, lo), hi)) / (hi - lo) * (h - pt - pb);
+    const w = svg.querySelector('.lcw'), b = svg.querySelector('.lcb'), mk = svg.querySelector('.mk');
+    if (w && b) {
+      const o = +b.dataset.o, hh = Math.max(+w.dataset.hh, px.price), ll = Math.min(+w.dataset.ll, px.price);
+      const col = px.price >= o ? '#34d399' : '#f87171';
+      w.setAttribute('y1', y(hh)); w.setAttribute('y2', y(ll)); w.setAttribute('stroke', col);
+      const top = y(Math.max(o, px.price)), bot = y(Math.min(o, px.price));
+      b.setAttribute('y', top); b.setAttribute('height', Math.max(bot - top, 1)); b.setAttribute('fill', col);
+    }
+    if (mk) mk.setAttribute('cy', y(px.price));
+  });
+  [['lv-eq', false], ['lv-tot', true], ['lv-day', true]].forEach(([id, c]) => {
+    const el = document.getElementById(id); if (!el) return;
+    const v = +el.dataset.v + delta; el.textContent = usd(v); if (c) cls(el, v);
+  });
+  const ind = document.getElementById('live');
+  if (!total) { ind.className = 'tag muted'; ind.textContent = 'no open positions'; }
+  else if (live === total) { ind.className = 'tag ok'; ind.textContent = '● LIVE prices (Coinbase, 5 s)'; }
+  else if (live) { ind.className = 'tag warn'; ind.textContent = 'LIVE partly - rest snapshot'; }
+  else { ind.className = 'tag warn'; ind.textContent = 'SNAPSHOT prices (live feed unavailable)'; }
+}
+async function pollLive() {
+  const syms = [...new Set([...document.querySelectorAll('section.posbox[data-ac="crypto"]')].map(s => s.dataset.sym))];
+  await Promise.all(syms.map(async sym => {
+    try {
+      const r = await fetch('https://api.exchange.coinbase.com/products/' + encodeURIComponent(sym) + '/ticker', {cache: 'no-store'});
+      if (!r.ok) throw new Error(r.status);
+      const j = await r.json(), p = parseFloat(j.price);
+      if (!(p > 0)) throw new Error('bad price');
+      LIVE[sym] = {price: p, t: j.time ? Date.parse(j.time) : Date.now()};
+    } catch (e) { delete LIVE[sym]; }
+  }));
+  applyLive();
+}
+pollLive(); setInterval(pollLive, 5000);
+"""
+
 STATIC_JS = """
 const upd = document.getElementById('upd');
 function age(ts){ const m = Math.round((Date.now() - Date.parse(ts)) / 60000);
@@ -42,7 +102,7 @@ setInterval(async () => {
     const s = await fetch('state.json?t=' + Date.now(), {cache: 'no-store'});
     const t = await fetch('top.html?t=' + Date.now(), {cache: 'no-store'});
     if (s.ok && t.ok) { const st = await s.json(); document.getElementById('top').innerHTML = await t.text();
-      document.body.dataset.gen = st.generated_ts; }
+      document.body.dataset.gen = st.generated_ts; if (typeof applyLive === 'function') applyLive(); }
   } catch (e) {}
   age(document.body.dataset.gen);
 }, 60000);
@@ -116,10 +176,11 @@ def _cards(d: dict) -> str:
     card = lambda label, val, sub="", cls="": (f'<div class="card"><div class="lbl">{E(label)}</div>'  # noqa: E731
                                               f'<div class="val {cls}">{val}</div><div class="sub">{sub}</div></div>')
     return '<div class="cards">' + "".join([
-        card("Balance (equity)", _n(o["equity"], pre="$"), f'cash {_n(o["cash"], pre="$")} · total '
-             f'<span class="{pnl_cls(o["total_pnl"])}">{_n(o["total_pnl"], pre="$")}</span>'),
-        card("Today P&L", _n(o["daily_pnl"], pre="$"), f'trading day {E(o["trading_day"])} (New York)',
-             pnl_cls(o["daily_pnl"])),
+        card("Balance (equity)", f'<span id="lv-eq" data-v="{o["equity"]}">{_n(o["equity"], pre="$")}</span>',
+             f'cash {_n(o["cash"], pre="$")} · total '
+             f'<span id="lv-tot" data-v="{o["total_pnl"]}" class="{pnl_cls(o["total_pnl"])}">{_n(o["total_pnl"], pre="$")}</span>'),
+        card("Today P&L", f'<span id="lv-day" data-v="{o["daily_pnl"]}">{_n(o["daily_pnl"], pre="$")}</span>',
+             f'trading day {E(o["trading_day"])} (New York)', pnl_cls(o["daily_pnl"])),
         card("Open positions", f'{o["open_positions"]} / {o["max_open_positions"]}',
              f'risk per trade {_n(o["risk_per_trade"], pre="$")}'),
         card("Risk status", '<span class="tag %s">%s</span>' % ("ok" if risk_ok else "bad", "OK" if risk_ok else "STOP"),
@@ -140,12 +201,16 @@ def _position_panels(d: dict) -> str:
     panels = []
     for p in ps:
         u = p["unrealized_pnl_usd"]
+        cur = p["current_price"] or p["entry_price"]
+        fees = (cur - p["entry_price"]) * p["quantity"] - u          # unrealized = (px - entry) * qty - entry fees
         panels.append(
-            f'<section class="posbox"><h2>{E(p["symbol"])} <span class="tag sim">SIMULATED position</span> '
-            f'{_status_tag(p["validation_status"])}</h2>'
+            f'<section class="posbox" data-sym="{E(p["symbol"])}" data-ac="{E(p["asset_class"])}" data-qty="{p["quantity"]}" '
+            f'data-entry="{p["entry_price"]}" data-mark="{cur}" data-fees="{fees:.8g}">'
+            f'<h2>{E(p["symbol"])} <span class="tag sim">SIMULATED position</span> '
+            f'{_status_tag(p["validation_status"])} <span class="lv-tag"></span></h2>'
             f'<div class="posline"><span>{E(p["strategy"])}</span><span>size {_n(p["quantity"], 6)}</span>'
-            f'<span>entry {_n(p["entry_price"], 4)}</span><span>now {_n(p["current_price"], 4)}</span>'
-            f'<span class="{"pos" if u > 0 else "neg" if u < 0 else ""}">unrealized <b>{_n(u, pre="$")}</b></span></div>'
+            f'<span>entry {_n(p["entry_price"], 4)}</span><span>now <b class="lv-now">{_n(p["current_price"], 4)}</b></span>'
+            f'<span class="lv-u {"pos" if u > 0 else "neg" if u < 0 else ""}">unrealized <b>{_n(u, pre="$")}</b></span></div>'
             + position_chart_svg(p.get("candles") or [], p["entry_price"], p["stop_loss"], p["take_profit"],
                                  p["current_price"])
             + f'<div class="sub">{E(p.get("chart_tf") or "")} candles · {E(p.get("chart_source") or "none")} '
@@ -245,9 +310,9 @@ def render(d: dict, demo: bool = False, static: bool = False) -> str:
             f'{extra}<title>ATLAS Trading AI</title><style>{CSS}</style></head>'
             f'<body data-gen="{E(str(d["generated_ts"]))}">{demo_html}{snap}<header><h1>ATLAS</h1>'
             f'<span class="tag sim">PAPER ONLY · Alpaca paper mirror {"ON" if o["alpaca_paper_orders_enabled"] else "OFF"}</span>'
-            f'{safe_html}<span class="muted" id="upd">updated {_t(d["generated_ts"])} Prague · auto-refresh 30 s</span></header>'
+            f'{safe_html}{'<span class="tag warn" id="live">SNAPSHOT prices</span>' if static else ''}<span class="muted" id="upd">updated {_t(d["generated_ts"])} Prague · auto-refresh 30 s</span></header>'
             f'<main><div id="top">{render_top(d)}</div><h2 class="dh">Details</h2>{det}</main>'
-            f'<script>{STATIC_JS if static else JS}</script></body></html>')
+            f'<script>{(STATIC_JS + LIVE_JS) if static else JS}</script></body></html>')
 
 
 def make_handler(settings: Settings, db_path=None, live_prices: bool = True, demo: bool = False):

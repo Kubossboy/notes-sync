@@ -69,19 +69,24 @@ def position_chart_svg(candles: list, entry: float, stop: float, target: float, 
     y = lambda p: pad_t + (hi - p) / (hi - lo) * (h - pad_t - pad_b)  # noqa: E731
     n = len(candles)
     cw = (w - pad_l - pad_r) / n
-    parts = [f'<svg viewBox="0 0 {w} {h}" class="chart" role="img" aria-label="price chart">']
+    # data-* = price->y mapping so the static page can move the last candle / mark with live prices
+    parts = [f'<svg viewBox="0 0 {w} {h}" class="chart" role="img" aria-label="price chart" '
+             f'data-lo="{lo:.8g}" data-hi="{hi:.8g}" data-pt="{pad_t}" data-pb="{pad_b}" data-h="{h}">']
     for i, (t, o, hh, ll, c) in enumerate(candles):
         x = pad_l + i * cw + cw / 2
         col = "#34d399" if c >= o else "#f87171"
-        parts.append(f'<line x1="{x:.1f}" x2="{x:.1f}" y1="{y(hh):.1f}" y2="{y(ll):.1f}" stroke="{col}" stroke-width="1"/>')
+        last = i == n - 1
+        lw = f' class="lcw" data-hh="{hh:.8g}" data-ll="{ll:.8g}"' if last else ""
+        lb = f' class="lcb" data-o="{o:.8g}"' if last else ""
+        parts.append(f'<line{lw} x1="{x:.1f}" x2="{x:.1f}" y1="{y(hh):.1f}" y2="{y(ll):.1f}" stroke="{col}" stroke-width="1"/>')
         top, bot = y(max(o, c)), y(min(o, c))
-        parts.append(f'<rect x="{x - cw * 0.35:.1f}" y="{top:.1f}" width="{cw * 0.7:.1f}" height="{max(bot - top, 1):.1f}" fill="{col}"/>')
+        parts.append(f'<rect{lb} x="{x - cw * 0.35:.1f}" y="{top:.1f}" width="{cw * 0.7:.1f}" height="{max(bot - top, 1):.1f}" fill="{col}"/>')
     for label, p, col in (("target", target, "#34d399"), ("entry", entry, "#60a5fa"), ("stop", stop, "#f87171")):
         parts.append(f'<line x1="{pad_l}" x2="{w - pad_r}" y1="{y(p):.1f}" y2="{y(p):.1f}" stroke="{col}" '
                      f'stroke-dasharray="5 4" stroke-width="1.4"/>'
                      f'<text x="{w - pad_r + 4}" y="{y(p) + 4:.1f}" fill="{col}" font-size="11">{label} {_px(p)}</text>')
     if mark:
-        parts.append(f'<circle cx="{w - pad_r}" cy="{y(mark):.1f}" r="3.5" fill="#fbbf24"/>')
+        parts.append(f'<circle class="mk" cx="{w - pad_r}" cy="{y(mark):.1f}" r="3.5" fill="#fbbf24"/>')
     for i in (0, n // 2, n - 1):
         t = candles[i][0].astimezone(PRAGUE).strftime("%H:%M")
         parts.append(f'<text x="{pad_l + i * cw:.1f}" y="{h - 6}" fill="#718396" font-size="10">{t}</text>')
