@@ -21,7 +21,7 @@ def test_manual_trade_waives_only_soft_filters_and_mirrors(env):
     broker = SpyBroker()
     tr = PaperTrader(env.s, env.db, env.safe, FakeEngine(), alpaca=broker)
     tr.quote = lambda sym, now: q()                                   # fresh reliable quote at 100
-    out = manual_trade(tr, "BTC-USD", 99.0, 103.5, _news(env.db), now=NOW)
+    out = manual_trade(tr, "BTC-USD", 99.0, 105.0, _news(env.db), now=NOW)
     assert out["approved"], out["reason"]
     assert any(w.startswith("strategy_validated_or_forward_test") for w in out["waived"])
     assert any(w.startswith("score_threshold") for w in out["waived"])
@@ -42,9 +42,9 @@ def test_manual_trade_still_blocked_by_hard_limits(env):
     bad_rr = manual_trade(tr, "BTC-USD", 99.0, 100.8, nid, now=NOW)  # R:R < 2 after costs
     assert not bad_rr["approved"] and "net_reward_risk" in bad_rr["reason"]
     env.safe.halt("test", module="test")
-    assert "safe_state_normal" in manual_trade(tr, "BTC-USD", 99.0, 103.5, nid, now=NOW)["reason"]
+    assert "safe_state_normal" in manual_trade(tr, "BTC-USD", 99.0, 105.0, nid, now=NOW)["reason"]
     with pytest.raises(ValueError):
-        manual_trade(tr, "BTC-USD", 99.0, 103.5, 99999, now=NOW)       # must cite real news
+        manual_trade(tr, "BTC-USD", 99.0, 105.0, 99999, now=NOW)       # must cite real news
     with pytest.raises(ValueError):
         env.risk.evaluate(proposal(env.db, add_signal(env.db)), q(), NOW, waive=frozenset({"max_open_positions"}))
     assert MANUAL_WAIVABLE == {"strategy_validated_or_forward_test", "score_threshold"}

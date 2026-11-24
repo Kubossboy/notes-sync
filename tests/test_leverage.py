@@ -43,7 +43,7 @@ def test_stop_beyond_liquidation_is_skipped(lenv):
 
 def test_leveraged_trade_margin_fees_and_liquidation_never_negative(lenv):
     s, db, risk, sim, led = lenv
-    sid = add_signal(db, entry=100.0, stop=99.7, target=101.5)
+    sid = add_signal(db, entry=100.0, stop=99.7, target=102.0)
     p = proposal(db, sid)
     p.leverage = 100.0
     d = risk.evaluate(p, q(99.95), NOW)

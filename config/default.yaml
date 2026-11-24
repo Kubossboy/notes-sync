@@ -19,7 +19,7 @@ execution:
   allow_short: false
   commission_per_trade_usd: 0.0
   stock_fee_bps: 0.0
-  crypto_fee_bps: 10.0     # Binance spot base-tier taker (EU-available). Was 60 (Coinbase retail) in M1-M2; see DECISIONS D31
+  crypto_fee_bps: 25.0     # Alpaca crypto tier 1 taker (0.25% per side). Maker is 0.15%. Applied to full notional.
   slippage_bps_stock: 5.0
   slippage_bps_crypto: 10.0
   fractional_stocks: true

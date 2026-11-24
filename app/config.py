@@ -58,7 +58,7 @@ class ExecutionSection(_Strict):
     allow_short: bool = False
     commission_per_trade_usd: float = Field(0.0, ge=0)
     stock_fee_bps: float = Field(0.0, ge=0)
-    crypto_fee_bps: float = Field(60.0, ge=0)
+    crypto_fee_bps: float = Field(25.0, ge=0)  # Alpaca tier 1 taker; yaml may override
     slippage_bps_stock: float = Field(5.0, ge=0)
     slippage_bps_crypto: float = Field(10.0, ge=0)
     # --- paper simulator (milestone 5)

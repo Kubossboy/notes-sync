@@ -61,8 +61,12 @@ def build_plan(setup: Setup, ctx: StrategyContext, settings: Settings) -> Plan:
     reward = target - e
     rr_g = reward / risk
     rr_n = (reward - cost) / (risk + cost)
-    min_rr = (settings.validation.forward_test_min_reward_risk
-              if setup.strategy in settings.validation.forward_test_strategies else settings.risk.min_reward_risk)
+    if settings.execution.paper_leverage > 1:
+        min_rr = settings.risk.lev_min_reward_risk          # D94: 1.2 for every main-ledger strategy when leveraged
+    elif setup.strategy in settings.validation.forward_test_strategies:
+        min_rr = settings.validation.forward_test_min_reward_risk
+    else:
+        min_rr = settings.risk.min_reward_risk
     if rr_n < min_rr:
         problems.append(f"net reward/risk {rr_n:.2f} < {min_rr}"
                         + (f" (target capped by resistance {capped:.4f})" if capped else ""))

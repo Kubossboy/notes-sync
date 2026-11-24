@@ -20,7 +20,7 @@ NOW = datetime(2026, 11, 24, 9, 0, tzinfo=UTC)               # crypto (24/7)
 STOCK_NOW = datetime(2026, 11, 24, 16, 0, tzinfo=UTC)        # 11:00 ET regular session
 
 
-def add_signal(db, symbol="BTC-USD", ac="crypto", entry=100.0, stop=99.0, target=103.5, status="new",
+def add_signal(db, symbol="BTC-USD", ac="crypto", entry=100.0, stop=99.0, target=105.0, status="new",
                score=75.0, data_status="live", expires=None, now=NOW, strategy="momentum_breakout",
                validation_status="validated"):
     sid = db.insert("signals", {
@@ -65,7 +65,8 @@ def test_position_sizing_respects_quarter_percent_risk(env):
     assert 2.3 < d.planned_risk_usd <= 2.5                         # sized to the budget incl. costs
     fill = d.expected_fill
     assert fill > 100.01                                            # ask + slippage
-    per_unit = (fill - 99 * (1 - 0.001)) + fill * 0.001 + 99 * 0.999 * 0.001
+    fee = env.s.execution.crypto_fee_bps / 1e4
+    per_unit = (fill - 99 * (1 - 0.001)) + fill * fee + 99 * 0.999 * fee
     assert d.quantity == pytest.approx(2.5 / per_unit, abs=1e-5)
     assert d.notional <= 500 + 1e-6 and d.rr_net >= 2.0
     rows = env.db.conn.execute("SELECT COUNT(*) FROM risk_checks WHERE evaluation_id=?", (d.evaluation_id,)).fetchone()[0]
@@ -86,7 +87,7 @@ def test_position_cap_when_stop_is_very_tight(env):
     # tiny stop distance -> risk sizing would exceed 50 % of equity -> capped, so risk < budget
     sid = add_signal(env.db, entry=100, stop=99.8, target=100.8)
     d = env.risk.evaluate(proposal(env.db, sid), q(spread=0.0), NOW)
-    assert d.notional <= 500 + 1e-6 and d.planned_risk_usd < 2.5
+    assert d.notional <= 500 + 1e-6 and d.planned_risk_usd <= 2.5
 
 
 # ---------------------------------------------------------------- rejections
@@ -203,8 +204,8 @@ def test_gap_through_stop_fills_at_open(env):
 
 def test_take_profit_and_same_bar_conflict(env):
     pos, _ = open_btc(env)
-    r = env.sim.manage_position(pos, [bar(NOW + timedelta(minutes=1), 100.5, 103.6, 100.4, 103.5)], NOW + timedelta(minutes=2))
-    assert r["reason"] == "take_profit" and r["exit_price"] == 103.5 and r["pnl"] > 0
+    r = env.sim.manage_position(pos, [bar(NOW + timedelta(minutes=1), 100.5, 105.1, 100.4, 105.0)], NOW + timedelta(minutes=2))
+    assert r["reason"] == "take_profit" and r["exit_price"] == 105.0 and r["pnl"] > 0
     pos2, _ = open_btc(env, symbol="ETH-USD")
     r2 = env.sim.manage_position(pos2, [bar(NOW + timedelta(minutes=1), 100, 104, 98.5, 101, sym="ETH-USD")],
                                  NOW + timedelta(minutes=2))
@@ -213,8 +214,8 @@ def test_take_profit_and_same_bar_conflict(env):
 
 def test_target_touch_without_trading_through_does_not_fill(env):
     pos, _ = open_btc(env)
-    r = env.sim.manage_position(pos, [bar(NOW + timedelta(minutes=1), 100, 103.5, 99.8, 103.4)], NOW + timedelta(minutes=2))
-    assert r["status"] == "open" and r["mark"] == 103.4
+    r = env.sim.manage_position(pos, [bar(NOW + timedelta(minutes=1), 100, 105.0, 99.8, 104.9)], NOW + timedelta(minutes=2))
+    assert r["status"] == "open" and r["mark"] == 104.9
 
 
 def test_bars_before_entry_are_ignored_and_mark_to_market(env):

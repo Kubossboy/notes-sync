@@ -167,15 +167,22 @@ def _ctx_simple(levels=None, cost=0.0, atr=1.0):
 def test_plan_reward_risk_and_costs():
     p = build_plan(Setup("t", "X", "long", 100, 99, 2.5), _ctx_simple(), SET)
     assert p.target == pytest.approx(102.5) and p.reward_risk_net == pytest.approx(2.5) and not p.problems
-    p = build_plan(Setup("t", "X", "long", 100, 99, 2.5), _ctx_simple(cost=20), SET)  # 0.4 round trip
+    p = build_plan(Setup("t", "X", "long", 100, 99, 2.5), _ctx_simple(cost=20), SET)  # 0.4 RT -> net RR 1.5, passes lev 1.2
     assert p.reward_risk_net == pytest.approx((2.5 - 0.4) / (1 + 0.4), abs=1e-3)
+    assert not any("net reward/risk" in x for x in p.problems)
+    p = build_plan(Setup("t", "X", "long", 100, 99, 2.5), _ctx_simple(cost=40), SET)  # 0.8 RT -> net RR < 1.2
+    assert p.reward_risk_net < SET.risk.lev_min_reward_risk
     assert any("net reward/risk" in x for x in p.problems)
 
 
 def test_plan_target_capped_by_resistance():
     lv = [{"price": 101.2, "touches": 3, "kinds": ["high"]}]
     p = build_plan(Setup("t", "X", "long", 100, 99, 2.5), _ctx_simple(lv), SET)
-    assert p.target_capped_by == 101.2 and p.reward_risk_net < 2 and p.problems
+    assert p.target_capped_by == 101.2 and p.reward_risk_net == pytest.approx(1.2)
+    assert not any("net reward/risk" in x for x in p.problems)  # meets lev min 1.2
+    lv = [{"price": 101.1, "touches": 3, "kinds": ["high"]}]
+    p = build_plan(Setup("t", "X", "long", 100, 99, 2.5), _ctx_simple(lv), SET)
+    assert p.target_capped_by == 101.1 and p.reward_risk_net < SET.risk.lev_min_reward_risk and p.problems
 
 
 @pytest.mark.parametrize("stop,needle", [(100.5, "invalid stop"), (99.9, "too tight"), (95, "too wide")])
