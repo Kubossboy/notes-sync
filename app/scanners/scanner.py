@@ -199,6 +199,8 @@ class Scanner:
                     "sentiment": ctx.sentiment, "market_trend": self._market_trend,
                     "note": ("strategy validated out-of-sample (still not a guarantee)" if quant["state"] == "validated"
                              else "FORWARD PAPER TEST - unvalidated, internal ledger only" if quant["state"] == "forward_test"
+                             else "PROMOTED by the shadow forward test (live evidence, not a guarantee)"
+                             if quant["state"] == "shadow_promoted"
                              else "parameters are unvalidated hypotheses - not a reliable predictive edge")}
         sig = {"strategy": setup.strategy, "symbol": setup.symbol, "direction": setup.direction,
                "entry": round(plan.entry, 6), "stop": round(plan.stop, 6), "target": round(plan.target, 6),

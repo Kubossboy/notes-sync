@@ -159,3 +159,20 @@ Reversible technical decisions made during development. Newest last.
   Balance chart: line series with price axis and a dashed "start" line, live equity point appended every 5 s.
 - The 60 s state refresh now patches cards/position text in place and only re-renders when the set of open positions changes,
   so pan/zoom isn't reset. Server-rendered SVG stays as the no-JS / no-library fallback; stocks stay snapshot-only.
+
+## D91 - Shadow forward test: strategies "learn" only through evidence-based promotion / demotion
+- Every live signal with valid long levels - from EVERY strategy, including backtest-failed and unavailable ones, and
+  including signals the scanner rejected - opens a SIMULATED trade on a separate append-only shadow ledger
+  (`shadow_positions` -> `shadow_trades`, migration 0009): fill = current quote via the same `CostModel` (spread + slippage
+  + 10 bps crypto fee), same plan stop / target, sized to the same $2.50 risk budget; one open shadow position per
+  strategy + symbol. Managed each cycle on `manage_timeframe` bars with the simulator's rules (stop checked before target,
+  stock EOD flatten, crypto max hold). It never touches `positions`, the $1,000 ledger, the risk engine or Alpaca; any shadow
+  error is logged and the cycle continues.
+- Promotion shadow -> eligible: >= 30 closed shadow trades and, over the last 30, PF >= 1.3, expectancy > 0 R after costs,
+  max drawdown <= validation.max_drawdown_pct (5 % = $50 of the $1,000 start). Demotion eligible -> shadow: rolling-30 PF < 1.0.
+  Each decision is appended to `strategy_status_log` (append-only, immutable) and to the events log.
+- An eligible strategy gets quant state `shadow_promoted` (neutral score 50, like forward test) and passes the risk check
+  `strategy_validated_or_forward_test` only while it is still eligible (re-read at risk time). Every other M5 limit
+  ($2.50 / trade, $10 / day, 2 positions, no leverage, R:R >= 2 after costs) still applies; real money is never involved.
+- No parameter optimisation, no refitting: thresholds are config defaults in `ValidationSettings` with lower bounds that
+  forbid loosening below 30 trades / PF 1.3 / PF 1.0. Dashboard section "Strategie (stínový test)" shows n/30, PF, status.

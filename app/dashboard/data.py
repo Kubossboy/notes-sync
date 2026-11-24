@@ -167,7 +167,17 @@ def collect(settings: Settings, db_path: Path | str | None = None, now: datetime
                                "paper_simulator": v.execution.provider == "internal_sim",
                                "alpaca_paper_orders": v.execution.alpaca_paper_orders_enabled,
                                "x_social": False}}
+        from app.shadow.engine import ShadowEngine, strategy_names
+        try:
+            shadow = ShadowEngine(settings, db).summary(strategy_names())
+        except Exception:                         # table missing on an old DB -> honest empty section
+            shadow = []
         return {"generated_ts": now.isoformat(), "overview": overview, "portfolio": portfolio, "scanner": scanner,
+                "shadow": shadow, "shadow_rules": {"min_trades": settings.validation.shadow_min_trades,
+                                                   "promote_pf": settings.validation.shadow_promote_pf,
+                                                   "demote_pf": settings.validation.shadow_demote_pf,
+                                                   "max_dd_usd": settings.portfolio.starting_equity_usd
+                                                   * settings.validation.max_drawdown_pct / 100},
                 "equity_curve": equity_curve, "start_equity": settings.portfolio.starting_equity_usd,
                 "analytics": analytics, "forward_test": fwd, "validation": validation, "news": news,
                 "risk": risk, "system": system}

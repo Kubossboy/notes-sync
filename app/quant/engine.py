@@ -81,6 +81,16 @@ class QuantEngine:
         st = self.status(ctx.asset_class, setup.strategy, ctx.now)
         out = {"score": None, "problems": [], "state": st["state"], "reason": st["reason"],
                "run_id": st.get("run_id")}
+        if st["state"] in ("failed", "unavailable") and self.s.validation.shadow_enabled:
+            from app.shadow.engine import ShadowEngine
+            sh = ShadowEngine(self.s, self.db)
+            if sh.status(setup.strategy, ctx.asset_class.value) == "eligible":   # D91: promoted on live evidence
+                _, _, allt, ws = sh.decide(setup.strategy, ctx.asset_class.value)
+                out.update(state="shadow_promoted", score=float(self.s.validation.forward_test_quant_score),
+                           reason=f"PROMOTED from the shadow forward test ({allt['n']} trades; rolling PF "
+                                  f"{ws['profit_factor']}, expectancy {ws['expectancy_r']} R) - backtest said: {st['reason'][:120]}",
+                           problems=[], evidence={"shadow": ws, "note": "neutral quant score; still under all M5 risk limits"})
+                return out
         if st["state"] == "failed":
             out["score"] = 0.0
             out["problems"] = [f"strategy failed backtest validation (run #{st['run_id']}): {st['reason'][:200]}"]

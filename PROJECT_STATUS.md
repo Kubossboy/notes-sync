@@ -1,6 +1,6 @@
 # PROJECT STATUS – ATLAS Trading AI
 
-_Last updated: 2026-11-24 (Europe/Prague) · version 0.7.2-m7 (dashboard v2 + public read-only snapshot + Alpaca PAPER mirror ON)_
+_Last updated: 2026-11-24 (Europe/Prague) · version 0.7.3-m7 (dashboard v2 + public read-only snapshot + Alpaca PAPER mirror ON)_
 
 ## Current development phase
 Milestone 7 – Dashboard: **complete** (plus the news-driven forward test). Next: Milestone 8 – continuous paper trading.
@@ -38,6 +38,8 @@ Milestone 7 – Dashboard: **complete** (plus the news-driven forward test). Nex
 
 - News-driven forward test (D75-D79): `forward_test` status for news_momentum (internal ledger only, never Alpaca), score weights news 40 / sentiment 15 / quant 15 / liquidity 10 / technical 10 / momentum 10, verified catalysts required, session-aware freshness, separate `forward_test_trades` log, `forwardtest` CLI.
 - M7 dashboard: local read-only web dashboard (`dashboard`), all spec sections + forward test + validation + risk; SIMULATED vs REAL labels.
+
+- Shadow forward test (D91): every strategy (also failed / unavailable) trades a separate simulated ledger; promotion after >= 30 trades with PF >= 1.3, expectancy > 0, DD <= $50; demotion on rolling PF < 1.0; dashboard section "Strategie (stínový test)".
 
 ## Remaining tasks
 M8: run the paper loop continuously (`scripts/run_loop.sh`), monitor errors, collect ≥ 30 forward-test trades (≥ 100 for spec §14 acceptance).

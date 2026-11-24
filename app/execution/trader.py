@@ -13,6 +13,7 @@ from app.data.models import AssetClass, tf_seconds
 from app.database.db import Database
 from app.execution.alpaca_paper import AlpacaPaperBroker
 from app.execution.mirror import AlpacaMirror
+from app.shadow.engine import ShadowEngine
 from app.execution.simulator import DuplicateOrder, PaperSimulator
 from app.portfolio.ledger import Ledger
 from app.risk.engine import MarketQuote, Proposal, RiskEngine
@@ -29,6 +30,7 @@ class PaperTrader:
         self.sim = PaperSimulator(settings, db, safe, self.ledger)
         self.alpaca = alpaca
         self.mirror = AlpacaMirror(alpaca, db) if alpaca is not None else None
+        self.shadow = ShadowEngine(settings, db)
 
     # ------------------------------------------------------------------ market access
     def quote(self, symbol: str, now: datetime) -> MarketQuote | None:
@@ -119,12 +121,15 @@ class PaperTrader:
     def run_once(self, now: datetime | None = None, scan: bool = True) -> dict:
         now = now or datetime.now(timezone.utc)
         report = {"ts": now.isoformat(), "managed": self.manage(now), "executions": [], "scans": []}
+        report["shadow"] = {"managed": self._shadow(lambda: self.shadow.manage(self._shadow_bars(now), now)), "opened": []}
         if scan and self.scanner is not None and self.safe.trading_allowed():
             run_ids = []
             for ac in (AssetClass.STOCK, AssetClass.CRYPTO):
                 rep = self.scanner.run(ac, mode="live")
                 run_ids.append(rep["run_id"])
                 report["scans"].append({"scanner": ac.value, "run_id": rep["run_id"], "signals": rep["signals"]})
+            # shadow ledger first (every strategy, separate ledger; never affects the portfolio / risk / Alpaca)
+            report["shadow"]["opened"] = self._shadow(lambda: self.shadow.open_from_signals(run_ids, self.quote, now))
             for row in self.candidates(run_ids):
                 if not self.safe.trading_allowed():
                     break
@@ -134,6 +139,26 @@ class PaperTrader:
         report["portfolio"] = summary(st, self.s)
         report["safe_state"] = self.safe.status().reason
         return report
+
+    def _shadow(self, fn):
+        try:
+            return fn()
+        except Exception as e:                       # the shadow test must never break a trading cycle
+            self.db.log_error("shadow", e)
+            return [{"error": f"{type(e).__name__}: {e}"}]
+
+    def _shadow_bars(self, now: datetime):
+        cache: dict = {}
+
+        def bars(pos):
+            sym = pos["symbol"]
+            if sym not in cache:
+                opened = datetime.fromisoformat(pos["opened_ts"])
+                n = int((now - opened).total_seconds() / tf_seconds(self.s.execution.manage_timeframe)) + 5
+                cache[sym] = self.engine.get_candles(sym, self.s.execution.manage_timeframe, min(1000, max(10, n)),
+                                                     crosscheck=False, now=now).series.candles
+            return cache[sym]
+        return bars
 
     def kill(self, reason: str, flatten: bool, now: datetime | None = None) -> dict:
         now = now or datetime.now(timezone.utc)

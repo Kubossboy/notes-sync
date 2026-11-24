@@ -226,6 +226,12 @@ class ValidationSection(_Strict):
     forward_test_strategies: list[str] = ["news_momentum"]
     forward_test_quant_score: float = Field(50.0, ge=0, le=100)   # neutral: no evidence either way yet
     forward_test_target_trades: int = Field(30, ge=10)
+    # Shadow forward test (D91): evidence-based promotion / demotion only - never parameter optimisation
+    shadow_enabled: bool = True
+    shadow_min_trades: int = Field(30, ge=30)            # promotion needs >= 30 closed shadow trades
+    shadow_window: int = Field(30, ge=30)                # rolling window for promotion / demotion stats
+    shadow_promote_pf: float = Field(1.3, ge=1.3)        # promotion: PF >= 1.3, expectancy > 0 after costs
+    shadow_demote_pf: float = Field(1.0, ge=1.0)         # demotion: rolling PF < 1.0 -> back to shadow
 
 
 class HttpSection(_Strict):

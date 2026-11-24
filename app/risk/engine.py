@@ -74,7 +74,7 @@ class Proposal:
     status: str
     expires_ts: datetime | None
     data_status: str | None
-    validation_status: str | None = None     # validated | forward_test | failed | unavailable
+    validation_status: str | None = None     # validated | forward_test | shadow_promoted | failed | unavailable
 
     @classmethod
     def from_signal_row(cls, r) -> "Proposal":
@@ -173,7 +173,11 @@ class RiskEngine:
         add("signal_complete", p.status == "new",
             detail=f"signal status '{p.status}' (only complete, non-rejected signals are executable)")
         ft_ok = p.validation_status == "forward_test" and p.strategy in self.s.validation.forward_test_strategies
-        add("strategy_validated_or_forward_test", p.validation_status == "validated" or ft_ok,
+        promoted = False
+        if p.validation_status == "shadow_promoted":                 # D91: re-checked at risk time
+            from app.shadow.engine import ShadowEngine
+            promoted = ShadowEngine(self.s, self.db).status(p.strategy, ac.value) == "eligible"
+        add("strategy_validated_or_forward_test", p.validation_status == "validated" or ft_ok or promoted,
             detail=f"validation status '{p.validation_status}' (failed / unvalidated strategies never trade; "
                    "forward_test only for configured non-backtestable strategies, internal ledger only)")
         add("score_threshold", (p.score or 0) >= self.s.scoring.min_score_to_trade, p.score,

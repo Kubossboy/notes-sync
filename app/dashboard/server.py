@@ -377,6 +377,40 @@ def _equity_panel(d: dict) -> str:
             + equity_svg(d["equity_curve"], d["start_equity"]) + '</section>')
 
 
+def _shadow_sub(d: dict) -> str:
+    rows = d.get("shadow") or []
+    elig = sum(1 for r in rows if r["status"] == "eligible")
+    return f'shadow forward test · {sum(r["n"] for r in rows)} trades · {elig} promoted'
+
+
+def _shadow_table(d: dict) -> str:
+    rules = d.get("shadow_rules") or {}
+    head = (f'<p class="muted">Every strategy (also failed / unavailable ones) trades on a separate SIMULATED shadow ledger '
+            f'with real prices and costs - never the $1,000 portfolio or Alpaca. Promotion after >= {rules.get("min_trades", 30)} '
+            f'trades with rolling PF >= {rules.get("promote_pf", 1.3)}, expectancy &gt; 0 R and max DD &lt;= '
+            f'${rules.get("max_dd_usd", 50):.0f}; demotion when rolling PF &lt; {rules.get("demote_pf", 1.0)}. '
+            f'No parameter tuning.</p>')
+
+    def prog(r):
+        pct = min(100, r["n"] / max(r["target"], 1) * 100)
+        return (f'<td style="min-width:110px">{r["n"]} / {r["target"]}<div class="bar"><i style="width:{pct:.0f}%"></i>'
+                f'</div></td>')
+
+    def pf(v):
+        return "–" if v is None else ("∞" if v == float("inf") else f"{v:.2f}")
+    return head + _table(d.get("shadow") or [], [
+        ("Strategy", "strategy"), ("Asset", "asset"),
+        ("Status", lambda r: '<td><span class="tag ok">eligible (main ledger)</span></td>' if r["status"] == "eligible"
+                             else '<td><span class="tag warn">shadow</span></td>'),
+        ("Progress", prog),
+        ("PF (last 30)", lambda r: f'<td class="n">{pf(r["window_pf"])}</td>'),
+        ("Win", lambda r: f'<td class="n">{_n(r["win_rate"] * 100 if r["win_rate"] is not None else None, 0)}%</td>'),
+        ("Exp. R", lambda r: f'<td class="n">{_n(r["expectancy_r"], 3)}</td>'),
+        ("Max DD $", lambda r: f'<td class="n">{_n(r["max_drawdown_usd"])}</td>'),
+        ("Open", lambda r: f'<td class="n">{r["open"]}</td>')],
+        "Shadow ledger not initialised yet.")
+
+
 def render_top(d: dict) -> str:
     return _cards(d) + _position_panels(d) + _equity_panel(d)
 
@@ -423,6 +457,7 @@ def render(d: dict, demo: bool = False, static: bool = False) -> str:
             ("P&L $", lambda r: f'<td class="n">{_n(r["pnl_usd"])}</td>'),
             ("R", lambda r: f'<td class="n">{_n(r["r_multiple"])}</td>'), ("Exit", "exit_reason")],
             "No forward-test trades yet (needs a verified positive catalyst + price confirmation + score >= 70).")),
+        ("Strategie (stínový test)", _shadow_sub(d), _shadow_table(d)),
         ("Strategy validation", "backtests on REAL history", _table(d["validation"], [
             ("Asset", "asset"), ("Strategy", "strategy"), ("Quant", lambda r: f"<td>{_status_tag(r['quant'])}</td>"),
             ("OOS n", lambda r: f'<td class="n">{r["oos_trades"] if r["oos_trades"] is not None else "–"}</td>'),
