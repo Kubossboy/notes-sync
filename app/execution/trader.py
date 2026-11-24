@@ -17,7 +17,7 @@ from app.execution.mirror import AlpacaMirror
 from app.shadow.engine import ShadowEngine
 from app.execution.simulator import DuplicateOrder, PaperSimulator
 from app.portfolio.ledger import Ledger
-from app.risk.leverage import daily_pct
+from app.risk.leverage import daily_pct, risk_pct
 from app.risk.engine import MarketQuote, Proposal, RiskEngine
 
 log = get_logger("trader")
@@ -235,4 +235,4 @@ def summary(st, settings: Settings) -> dict:
             "daily_pnl": round(st.daily_pnl, 4), "daily_loss_limit": round(limit, 4),
             "daily_limit_reached": st.daily_loss >= limit, "open_positions": len(st.open_positions),
             "consecutive_losses_today": st.consecutive_losses_today,
-            "risk_per_trade_budget": round(st.equity * settings.risk.max_risk_per_trade_pct / 100, 4)}
+            "risk_per_trade_budget": round(st.equity * risk_pct(settings) / 100, 4)}
