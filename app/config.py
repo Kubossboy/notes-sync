@@ -74,6 +74,7 @@ class ExecutionSection(_Strict):
     # Alpaca PAPER order mirroring (paper-api.alpaca.markets only). OFF by default; the
     # internal $1,000 ledger stays authoritative either way.
     alpaca_paper_orders_enabled: bool = False
+    trade_management_enabled: bool = True           # D92: tighten-only SL, reduce-only TP, early exits
 
 
 class PortfolioSection(_Strict):
@@ -194,7 +195,7 @@ class NewsSection(_Strict):
     min_source_success_ratio: float = Field(0.5, gt=0, le=1)
     window_hours: float = Field(24, gt=0)
     half_life_hours: float = Field(6, gt=0)
-    catalyst_hours: float = Field(16, gt=0)           # freshness for news-driven momentum (flat window)
+    catalyst_hours: float = Field(20, gt=0)           # freshness for news-driven momentum (flat window)
     catalyst_session_aware: bool = True               # stocks: also fresh until the close of the first
                                                       # regular session after publication (after-close 8-Ks/earnings)
     catalyst_max_hours: float = Field(96, gt=0)       # hard cap (covers Friday after-close -> Monday)
@@ -226,6 +227,9 @@ class ValidationSection(_Strict):
     forward_test_strategies: list[str] = ["news_momentum"]
     forward_test_quant_score: float = Field(50.0, ge=0, le=100)   # neutral: no evidence either way yet
     forward_test_target_trades: int = Field(30, ge=10)
+    # D93: moderately looser ENTRY gates for forward-test strategies (news_momentum) on the main paper ledger only.
+    forward_test_min_score: int = Field(60, ge=60, le=100)          # was scoring.min_score_to_trade 70
+    forward_test_min_reward_risk: float = Field(1.5, ge=1.5)        # was risk.min_reward_risk 2.0 (net of costs)
     # Shadow forward test (D91): evidence-based promotion / demotion only - never parameter optimisation
     shadow_enabled: bool = True
     shadow_min_trades: int = Field(30, ge=30)            # promotion needs >= 30 closed shadow trades

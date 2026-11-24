@@ -64,7 +64,7 @@ class PaperSimulator:
                     "direction": "long", "quantity": qty, "entry_price": fill.price, "stop_loss": p.stop,
                     "take_profit": p.target, "fees_usd": fee, "slippage_usd": fill.slippage_per_unit * qty,
                     "unrealized_pnl_usd": -fee, "status": "open", "entry_order_id": oid,
-                    "signal_id": p.signal_id, "planned_risk_usd": d.planned_risk_usd, "initial_stop": p.stop,
+                    "signal_id": p.signal_id, "planned_risk_usd": d.planned_risk_usd, "initial_stop": p.stop, "initial_target": p.target,
                     "mark_price": fill.price, "mark_ts": ts, "mfe_price": fill.price, "mae_price": fill.price,
                     "trading_day": trading_day_of(now).isoformat(), "validation_status": p.validation_status})
                 self.db.conn.execute("UPDATE order_requests SET status='filled', filled_ts=?, avg_fill_price=?, "

@@ -1,6 +1,6 @@
 # PROJECT STATUS – ATLAS Trading AI
 
-_Last updated: 2026-11-24 (Europe/Prague) · version 0.7.3-m7 (dashboard v2 + public read-only snapshot + Alpaca PAPER mirror ON)_
+_Last updated: 2026-11-24 (Europe/Prague) · version 0.7.4-m7 (dashboard v2 + public read-only snapshot + Alpaca PAPER mirror ON)_
 
 ## Current development phase
 Milestone 7 – Dashboard: **complete** (plus the news-driven forward test). Next: Milestone 8 – continuous paper trading.

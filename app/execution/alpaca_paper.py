@@ -97,6 +97,12 @@ class AlpacaPaperBroker:
                 "time_in_force": "gtc" if crypto else "day", "client_order_id": client_order_id}
         return self._req("POST", "/v2/orders", json=body)
 
+    def replace_order(self, order_id: str, **fields) -> dict:
+        """Replace a live bracket leg (stop_price / limit_price) - used only to TIGHTEN a stop or SHRINK a target."""
+        if not self.orders_enabled:
+            raise AlpacaOrdersDisabled("execution.alpaca_paper_orders_enabled is false (or no keys)")
+        return self._req("PATCH", f"/v2/orders/{order_id}", json={k: f"{v:.2f}" for k, v in fields.items()})
+
     def close_position(self, symbol: str) -> dict:
         """Cancel any open legs for the symbol, then liquidate. Already-flat (404) is fine."""
         if not self.orders_enabled:

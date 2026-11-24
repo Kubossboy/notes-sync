@@ -84,19 +84,29 @@ class ShadowEngine:
             self.db.insert("shadow_positions", {
                 "opened_ts": now.isoformat(), "signal_id": r["id"], "symbol": r["symbol"], "asset_class": ac.value,
                 "strategy": r["strategy"], "timeframe": r["timeframe"], "validation_status": r["validation_status"],
-                "entry_price": fill.price, "stop_loss": r["stop_loss"], "take_profit": r["take_profit"],
+                "entry_price": fill.price, "stop_loss": r["stop_loss"], "take_profit": r["take_profit"], "initial_stop": r["stop_loss"], "initial_target": r["take_profit"],
                 "quantity": qty, "planned_risk_usd": self._risk_budget(), "entry_fee_usd": fee, "mark_price": fill.price})
             out.append({"symbol": r["symbol"], "strategy": r["strategy"], "entry": fill.price})
         return out
 
     # ------------------------------------------------------------------ management
-    def manage(self, bars_fn, now: datetime) -> list[dict]:
+    def manage(self, bars_fn, now: datetime, bars15_fn=None) -> list[dict]:
         if not self.ready:
             return []
         out = []
         for pos in [dict(r) for r in self.db.conn.execute("SELECT * FROM shadow_positions WHERE status='open'")]:
             try:
-                res = self._manage_one(pos, bars_fn(pos), now)
+                bars = bars_fn(pos)
+                res = self._manage_one(pos, bars, now)
+                if res is None and bars15_fn is not None and bars:       # D92: same management as the main ledger
+                    from app.execution.management import TradeManager
+                    cur = dict(self.db.conn.execute("SELECT * FROM shadow_positions WHERE id=?", (pos["id"],)).fetchone())
+                    last = cur["mark_price"] or bars[-1].close
+                    ac = AssetClass(cur["asset_class"])
+                    adj = TradeManager(self.s, self.db).apply(
+                        "shadow", cur, bars15_fn(cur["symbol"]), last, now,
+                        lambda p, why: self._close(p, self.costs.sell_fill(ac, last).price, why, now))
+                    res = next((a for a in adj if a["kind"] == "exit"), None)
                 if res:
                     out.append(res)
             except Exception as e:                      # shadow problems never affect the main ledger

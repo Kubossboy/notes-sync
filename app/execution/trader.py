@@ -12,6 +12,7 @@ from app.data.engine import MarketDataEngine, asset_class_of
 from app.data.models import AssetClass, tf_seconds
 from app.database.db import Database
 from app.execution.alpaca_paper import AlpacaPaperBroker
+from app.execution.management import TradeManager
 from app.execution.mirror import AlpacaMirror
 from app.shadow.engine import ShadowEngine
 from app.execution.simulator import DuplicateOrder, PaperSimulator
@@ -31,6 +32,8 @@ class PaperTrader:
         self.alpaca = alpaca
         self.mirror = AlpacaMirror(alpaca, db) if alpaca is not None else None
         self.shadow = ShadowEngine(settings, db)
+        self.tm = TradeManager(settings, db, self.mirror)
+        self._b15: dict = {}
 
     # ------------------------------------------------------------------ market access
     def quote(self, symbol: str, now: datetime) -> MarketQuote | None:
@@ -74,6 +77,12 @@ class PaperTrader:
                 r = self.sim.manage_position(pos, bars, now, q)
                 if "reason" in r and self.mirror is not None:      # internal exit -> mirror it
                     r["alpaca"] = self.mirror.close(pos["id"], sym, pos["asset_class"])
+                elif r.get("status") == "open" and self.s.execution.trade_management_enabled and r.get("mark"):
+                    try:
+                        r["adjustments"] = self.tm.apply("main", pos, self.bars15(sym, now), r["mark"], now,
+                                                         lambda p, why: self._close_main(p, why, q, now))
+                    except Exception as e:                           # management failure never touches the stop
+                        self.db.log_error("execution.trade_management", e)
                 out.append({"symbol": sym, **r})
             except Exception as e:
                 # cannot watch the stop -> fail closed for NEW trades; position stays open, retried next cycle
@@ -81,6 +90,23 @@ class PaperTrader:
                 self.safe.halt(f"cannot manage open position {sym}: {type(e).__name__}: {e}", module="execution")
                 out.append({"symbol": sym, "error": str(e)})
         return out
+
+    def bars15(self, sym: str, now: datetime):
+        k = (sym, now.replace(second=0, microsecond=0))
+        if k not in self._b15:
+            self._b15 = {kk: v for kk, v in self._b15.items() if kk[1] == k[1]}
+            self._b15[k] = self.engine.get_candles(sym, "15m", 120, crosscheck=False, now=now).series.candles
+        return self._b15[k]
+
+    def _close_main(self, pos: dict, reason: str, q, now: datetime) -> dict:
+        ac = AssetClass(pos["asset_class"])
+        cur = dict(self.db.conn.execute("SELECT * FROM positions WHERE id=?", (pos["id"],)).fetchone())
+        last = q.price if q else cur["mark_price"]
+        res = self.sim.close_position(cur, self.sim.costs.sell_fill(ac, last, q.bid if q else None,
+                                                                    q.ask if q else None), reason, now)
+        if self.mirror is not None:
+            res["_alpaca"] = self.mirror.close(pos["id"], pos["symbol"], pos["asset_class"])
+        return res
 
     def candidates(self, run_ids: list[int]) -> list:
         if not run_ids:
@@ -121,7 +147,9 @@ class PaperTrader:
     def run_once(self, now: datetime | None = None, scan: bool = True) -> dict:
         now = now or datetime.now(timezone.utc)
         report = {"ts": now.isoformat(), "managed": self.manage(now), "executions": [], "scans": []}
-        report["shadow"] = {"managed": self._shadow(lambda: self.shadow.manage(self._shadow_bars(now), now)), "opened": []}
+        report["shadow"] = {"managed": self._shadow(lambda: self.shadow.manage(
+            self._shadow_bars(now), now, (lambda s: self.bars15(s, now)) if self.s.execution.trade_management_enabled
+            else None)), "opened": []}
         if scan and self.scanner is not None and self.safe.trading_allowed():
             run_ids = []
             for ac in (AssetClass.STOCK, AssetClass.CRYPTO):

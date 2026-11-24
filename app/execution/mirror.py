@@ -69,6 +69,37 @@ class AlpacaMirror:
             self.db.log_event("alpaca_mirror_failed", "execution", str(e)[:300], "warning")
             return {"mirrored": False, "reason": f"error: {type(e).__name__}"}
 
+    def adjust(self, position_id: int, symbol: str, asset_class: str, kind: str, value: float) -> dict:
+        """Mirror a stop / target change (D92). Bracket -> replace the matching leg; market entry -> nothing lives at
+        Alpaca (ATLAS manages the exit and mirrors the close)."""
+        if not self.enabled:
+            return {"mirrored": False, "reason": "disabled"}
+        row = self.db.conn.execute(
+            "SELECT external_order_id, external_status FROM order_requests WHERE position_id=? AND purpose='entry' "
+            "AND external_order_id IS NOT NULL", (position_id,)).fetchone()
+        if not row:
+            return {"mirrored": False, "reason": "entry not mirrored"}
+        if ":bracket:" not in (row["external_status"] or ""):
+            return {"mirrored": False, "reason": "market entry: no stop/target legs at Alpaca; ATLAS manages the exit "
+                                                 "and mirrors the close"}
+        try:
+            legs = []
+            for o in self.b.open_orders(alpaca_symbol(symbol, asset_class)) or []:
+                if o.get("id") == row["external_order_id"]:
+                    legs += o.get("legs") or []
+                elif o.get("parent_order_id") == row["external_order_id"]:
+                    legs.append(o)
+            want = "stop" if kind == "stop" else "limit"
+            leg = next((l for l in legs if l.get("type") == want and l.get("status") not in ("filled", "canceled")), None)
+            if not leg:
+                return {"mirrored": False, "reason": f"no open {want} leg found"}
+            r = self.b.replace_order(leg["id"], **({"stop_price": value} if kind == "stop" else {"limit_price": value}))
+            self.db.log_event("alpaca_mirror_adjusted", "execution", f"{symbol} {kind} -> {value:.2f}", "info")
+            return {"mirrored": True, "kind": "replace_leg", "status": r.get("status")}
+        except Exception as e:
+            self.db.log_error("execution.alpaca_paper", e)
+            return {"mirrored": False, "reason": f"error: {type(e).__name__}"}
+
     def close(self, position_id: int, symbol: str, asset_class: str) -> dict:
         """Mirror an internal exit; only for positions whose entry was actually mirrored."""
         if not self.enabled:

@@ -367,8 +367,19 @@ def _position_panels(d: dict) -> str:
                                  p["current_price"])
             + f'<div class="sub"><span class="tfsrc">{E(p.get("chart_tf") or "")} candles · {E(p.get("chart_source") or "none")} '
               f'(REAL prices{", snapshot" if p["asset_class"] != "crypto" else ""})</span> · stop {_n(p["stop_loss"], 4)} · target {_n(p["take_profit"], 4)} · opened {_t(p["opened_ts"])}</div>'
-              '</section>')
+            + _adjustments(p) + '</section>')
     return f'<div class="posgrid n{min(len(panels), 2)}">{"".join(panels)}</div>'
+
+
+def _adjustments(p: dict) -> str:
+    adj = p.get("adjustments") or []
+    if not adj:
+        return ('<div class="sub">úpravy: none yet - SL only tightens (breakeven at +1 R, trail from +1.5 R), '
+                'TP only shrinks, early exit rules active (D92)</div>')
+    li = "".join(f'<li>{_t(a["ts"])} · <b>{E(a["kind"])}</b> {E(a["rule"])}'
+                 + (f' {_n(a["old_value"], 4)} → {_n(a["new_value"], 4)}' if a["new_value"] is not None else "")
+                 + f' · <span class="muted">{E(a["reason"])}</span></li>' for a in adj)
+    return f'<details class="sub" open><summary>úpravy ({len(adj)})</summary><ul>{li}</ul></details>'
 
 
 def _equity_panel(d: dict) -> str:

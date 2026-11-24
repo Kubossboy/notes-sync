@@ -176,3 +176,32 @@ Reversible technical decisions made during development. Newest last.
   ($2.50 / trade, $10 / day, 2 positions, no leverage, R:R >= 2 after costs) still applies; real money is never involved.
 - No parameter optimisation, no refitting: thresholds are config defaults in `ValidationSettings` with lower bounds that
   forbid loosening below 30 trades / PF 1.3 / PF 1.0. Dashboard section "Strategie (stínový test)" shows n/30, PF, status.
+
+## D92 - Active trade management (main paper ledger AND shadow ledger, same code: app/execution/management.py)
+- Inputs: complete 15m bars (ATR14, EMA9/EMA20, RSI14), live price, symbol-tagged news published after entry (last 2 h).
+  R = entry - INITIAL stop. Runs each cycle after the normal stop/target/time-exit walk, only if the position is still open.
+- SL tightens only (also enforced by DB triggers on positions / shadow_positions): at >= +1.0 R -> breakeven + costs
+  (exit at the stop nets >= entry + entry fee after stop slippage and exit fee); from >= +1.5 R trail to
+  max(breakeven, min(highest high since entry - 2.0 x ATR14, lowest low of the last 5 complete 15m bars)). Applied only
+  if it tightens by >= 0.1 R and stays >= 0.25 ATR below price.
+- TP shrinks only (DB trigger: never above the current, hence never above the original), floor price + 0.5 ATR,
+  applied only if it shrinks by >= 0.1 R: momentum fade (profit >= +0.5 R, close < EMA9, RSI14 < 50) -> price + 1 ATR;
+  volatility drop (ATR14 < 0.5 x ATR14 at entry) -> price + 2 ATR; resistance / liquidity zone (pivot high, 2 bars
+  each side, last 96 bars, between the floor and the target) -> pivot - 0.1 ATR; symbol news sentiment turns (mean
+  <= -0.25) -> price + 1 ATR. Lowest candidate wins.
+- Early exit: in net profit on strong adverse news (hard negative catalyst, or mean sentiment <= -0.5 over >= 2 items) or a
+  momentum reversal (2 complete closes < EMA20 and RSI14 < 40). Losing positions exit early ONLY on a hard negative catalyst
+  (bankruptcy, exchange hack, delisting, crypto regulatory action, guidance cut, earnings miss, FDA rejection, trial
+  failure). Session end / time stop: existing simulator rules (stock EOD flatten, crypto 24 h max hold).
+- No adding / averaging down: quantity is immutable (DB trigger); one position per symbol as before.
+- Every change goes to append-only, immutable `trade_adjustments` (ledger, rule, old -> new, price, R, reason, Alpaca
+  result). Alpaca PAPER: bracket entries -> PATCH the stop / limit leg; market entries (crypto, fractional) have no legs
+  at Alpaca, so only exits are mirrored (close_position). Any management error is logged and leaves the stop untouched.
+
+## D93 - Moderately looser ENTRY gates for forward-test strategies (news_momentum), approved by Kubiqq
+- validation.forward_test_min_score: 70 -> 60 (previously scoring.min_score_to_trade applied; 60 is the spec floor).
+- validation.forward_test_min_reward_risk: 2.0 -> 1.5 net of costs (scanner plan + risk engine), news_momentum only.
+- news.catalyst_hours (news_momentum catalyst freshness): 16 -> 20 h (catalyst_max_hours cap 96 h unchanged).
+- Unchanged: all other strategies (min score 70, R:R 2.0), $2.50 risk / trade, $10 daily stop, max 2 positions,
+  3 consecutive losses end the day, no leverage, no averaging. Failed strategies still never trade in main; promotion only
+  via the shadow rule (D91), and promoted strategies use the normal gates (70 / 2.0).

@@ -61,8 +61,10 @@ def build_plan(setup: Setup, ctx: StrategyContext, settings: Settings) -> Plan:
     reward = target - e
     rr_g = reward / risk
     rr_n = (reward - cost) / (risk + cost)
-    if rr_n < settings.risk.min_reward_risk:
-        problems.append(f"net reward/risk {rr_n:.2f} < {settings.risk.min_reward_risk}"
+    min_rr = (settings.validation.forward_test_min_reward_risk
+              if setup.strategy in settings.validation.forward_test_strategies else settings.risk.min_reward_risk)
+    if rr_n < min_rr:
+        problems.append(f"net reward/risk {rr_n:.2f} < {min_rr}"
                         + (f" (target capped by resistance {capped:.4f})" if capped else ""))
     return Plan(e, s, target, risk, reward, cost, round(rr_g, 3), round(rr_n, 3), capped, problems)
 

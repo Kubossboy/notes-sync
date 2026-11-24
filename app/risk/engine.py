@@ -180,8 +180,8 @@ class RiskEngine:
         add("strategy_validated_or_forward_test", p.validation_status == "validated" or ft_ok or promoted,
             detail=f"validation status '{p.validation_status}' (failed / unvalidated strategies never trade; "
                    "forward_test only for configured non-backtestable strategies, internal ledger only)")
-        add("score_threshold", (p.score or 0) >= self.s.scoring.min_score_to_trade, p.score,
-            self.s.scoring.min_score_to_trade)
+        min_score = self.s.validation.forward_test_min_score if ft_ok else self.s.scoring.min_score_to_trade
+        add("score_threshold", (p.score or 0) >= min_score, p.score, min_score)
         add("signal_not_expired", p.expires_ts is None or now < p.expires_ts,
             detail=f"expires {p.expires_ts.isoformat() if p.expires_ts else '-'}")
         add("data_live", p.data_status == "live", detail=f"signal data {p.data_status}")
@@ -252,8 +252,11 @@ class RiskEngine:
                 round(remaining_day, 4))
             add("no_leverage_cash_covers_notional", notional * (1 + fee_b) + comm <= st.cash + 1e-9,
                 round(notional, 4), round(st.cash, 4))
-            add("net_reward_risk", rr is not None and rr >= self.r.min_reward_risk,
-                None if rr is None else round(rr, 3), self.r.min_reward_risk, "after fees, spread and slippage")
+            min_rr = (self.s.validation.forward_test_min_reward_risk
+                      if p.validation_status == "forward_test" and p.strategy in self.s.validation.forward_test_strategies
+                      else self.r.min_reward_risk)
+            add("net_reward_risk", rr is not None and rr >= min_rr,
+                None if rr is None else round(rr, 3), min_rr, "after fees, spread and slippage")
             if q.avg_bar_dollar_volume:
                 pct = notional / q.avg_bar_dollar_volume * 100
                 add("order_vs_liquidity", pct <= self.ex.max_order_pct_bar_dollar_volume, round(pct, 4),

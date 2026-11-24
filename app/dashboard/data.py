@@ -95,7 +95,7 @@ def collect(settings: Settings, db_path: Path | str | None = None, now: datetime
             "mode": settings.execution.mode, "provider": settings.execution.provider,
             "alpaca_paper_orders_enabled": settings.execution.alpaca_paper_orders_enabled, "version": VERSION}
         portfolio = [{
-            "symbol": p["symbol"], "asset_class": p["asset_class"], "strategy": p["strategy"],
+            "id": p["id"], "symbol": p["symbol"], "asset_class": p["asset_class"], "strategy": p["strategy"],
             "validation_status": p.get("validation_status"), "quantity": p["quantity"],
             "entry_price": p["entry_price"], "current_price": p["mark_price"], "mark_ts": p["mark_ts"],
             "unrealized_pnl_usd": round(((p["mark_price"] or p["entry_price"]) - p["entry_price"]) * p["quantity"]
@@ -109,6 +109,11 @@ def collect(settings: Settings, db_path: Path | str | None = None, now: datetime
             if not c:
                 c, tf, src = db_candles(db, p["symbol"], tf)
             p["candles"], p["chart_tf"], p["chart_source"] = c, tf, src
+            try:
+                p["adjustments"] = _rows(db, "SELECT ts, kind, rule, old_value, new_value, reason FROM trade_adjustments "
+                                             "WHERE ledger='main' AND position_id=? ORDER BY id DESC LIMIT 10", (p["id"],))
+            except Exception:
+                p["adjustments"] = []
         equity_curve = equity_points(db, st.equity, now)
         sigs = _rows(db, "SELECT s.*, sc.total_score, sc.score_on_available FROM signals s LEFT JOIN signal_scores sc "
                          "ON sc.signal_id = s.id ORDER BY s.id DESC LIMIT 40")
