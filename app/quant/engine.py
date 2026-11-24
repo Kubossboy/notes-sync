@@ -50,7 +50,7 @@ class QuantEngine:
         if strategy in NOT_BACKTESTABLE:
             if strategy in self.s.validation.forward_test_strategies:
                 return {"state": "forward_test", "reason": f"FORWARD PAPER TEST (not backtestable: "
-                        f"{NOT_BACKTESTABLE[strategy]}) - internal $1,000 ledger only, never Alpaca orders; "
+                        f"{NOT_BACKTESTABLE[strategy]}) - internal $1,000 ledger is the source of truth (mirrored to Alpaca PAPER when enabled); "
                         "unvalidated, judged after >= " f"{self.s.validation.forward_test_target_trades} trades"}
             return {"state": "unavailable", "reason": f"not backtestable: {NOT_BACKTESTABLE[strategy]}"}
         r = self.latest(ac, strategy)

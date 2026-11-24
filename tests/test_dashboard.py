@@ -29,7 +29,7 @@ def test_empty_state_is_labelled_not_faked(settings, dash_db):
     assert o["label"].startswith("SIMULATED") and data["system"]["label"].startswith("REAL")
     page = render(data)
     for s in ("No journaled signals yet", "No open positions", "No closed paper trades yet",
-              "No forward-test trades yet", "PAPER ONLY", "SAFE STATE: normal", "Alpaca orders OFF",
+              "No forward-test trades yet", "PAPER ONLY", "SAFE STATE: normal", "Alpaca paper mirror ON",
               "Not enough equity history yet", "<details>", "Balance (equity)", "Forward test (news)"):
         assert s in page
     assert "DEMO" not in page

@@ -68,6 +68,15 @@ class AlpacaPaperBroker:
         return AssetInfo(j.get("symbol", sym), bool(j.get("tradable")), bool(j.get("fractionable")),
                          j.get("class", "?"), j.get("status", "?"))
 
+    def account(self) -> dict:
+        """Read-only paper account summary (no account number / ids returned)."""
+        j = self._req("GET", "/v2/account")
+        return {k: j.get(k) for k in ("status", "currency", "cash", "equity", "buying_power", "crypto_status",
+                                      "trading_blocked", "account_blocked", "pattern_day_trader")}
+
+    def open_orders(self, symbol: str) -> list[dict]:
+        return self._req("GET", "/v2/orders", params={"status": "open", "symbols": symbol, "nested": "true"})
+
     def order_by_client_id(self, client_order_id: str) -> dict:
         return self._req("GET", "/v2/orders:by_client_order_id", params={"client_order_id": client_order_id})
 
@@ -80,7 +89,26 @@ class AlpacaPaperBroker:
                 "take_profit": {"limit_price": f"{target:.2f}"}, "stop_loss": {"stop_price": f"{stop:.2f}"}}
         return self._req("POST", "/v2/orders", json=body)
 
-    def close_position(self, symbol: str) -> dict:
+    def submit_market(self, symbol: str, qty: float, client_order_id: str, crypto: bool) -> dict:
+        """Plain market buy for what a bracket can't carry (crypto, fractional shares). Exit is mirrored on close."""
         if not self.orders_enabled:
             raise AlpacaOrdersDisabled("execution.alpaca_paper_orders_enabled is false (or no keys)")
-        return self._req("DELETE", f"/v2/positions/{symbol}")
+        body = {"symbol": symbol, "qty": f"{qty:.9f}".rstrip("0").rstrip("."), "side": "buy", "type": "market",
+                "time_in_force": "gtc" if crypto else "day", "client_order_id": client_order_id}
+        return self._req("POST", "/v2/orders", json=body)
+
+    def close_position(self, symbol: str) -> dict:
+        """Cancel any open legs for the symbol, then liquidate. Already-flat (404) is fine."""
+        if not self.orders_enabled:
+            raise AlpacaOrdersDisabled("execution.alpaca_paper_orders_enabled is false (or no keys)")
+        for o in self.open_orders(symbol) or []:
+            try:
+                self._req("DELETE", f"/v2/orders/{o['id']}")
+            except ConnectionError:
+                pass
+        try:
+            return self._req("DELETE", f"/v2/positions/{requests.utils.quote(symbol.replace('/', ''), safe='')}")
+        except ConnectionError as e:
+            if "HTTP 404" in str(e):
+                return {"status": "already_flat"}
+            raise

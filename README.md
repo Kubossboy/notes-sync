@@ -225,7 +225,12 @@ Research software. Paper results are simulations with stated assumptions
 
 ## Publishing a read-only snapshot (Cloudflare Pages, free)
 - Export only (no network deploy): `.venv/bin/python -m app.main export --out var/site` -> prints project + secret path.
-- Deploy once: put `CLOUDFLARE_API_TOKEN` (Pages:Edit) and `CLOUDFLARE_ACCOUNT_ID` in `.env`, then `scripts/publish.sh`.
+- Deploy once: with `CLOUDFLARE_API_TOKEN` (Pages:Edit) in the process env (never in .env), run `scripts/publish.sh`.
+- Fallback without a token: `scripts/worker_bundle.py` (Worker deploy through the Cloudflare MCP connection).
 - Every 5 min via cron: `*/5 * * * * cd /workspace/atlas-trading-ai && scripts/publish.sh >> logs/publish.log 2>&1`
   (or `scripts/publish_loop.sh`, stop with `touch var/STOP_PUBLISH`). Not started automatically.
 - URL: `https://<project>.pages.dev/<slug>/` (both in git-ignored `var/publish.json`). Scrubbed, noindex, no controls.
+
+## Alpaca PAPER mirror (D85)
+`execution.alpaca_paper_orders_enabled: true` - internal trades (incl. forward_test) are mirrored to paper-api.alpaca.markets with the
+qty sized from the ATLAS $1,000 ledger. The internal ledger stays authoritative. Live trading is blocked in code.

@@ -244,7 +244,7 @@ def render(d: dict, demo: bool = False, static: bool = False) -> str:
     return (f'<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
             f'{extra}<title>ATLAS Trading AI</title><style>{CSS}</style></head>'
             f'<body data-gen="{E(str(d["generated_ts"]))}">{demo_html}{snap}<header><h1>ATLAS</h1>'
-            f'<span class="tag sim">PAPER ONLY · Alpaca orders {"ON" if o["alpaca_paper_orders_enabled"] else "OFF"}</span>'
+            f'<span class="tag sim">PAPER ONLY · Alpaca paper mirror {"ON" if o["alpaca_paper_orders_enabled"] else "OFF"}</span>'
             f'{safe_html}<span class="muted" id="upd">updated {_t(d["generated_ts"])} Prague · auto-refresh 30 s</span></header>'
             f'<main><div id="top">{render_top(d)}</div><h2 class="dh">Details</h2>{det}</main>'
             f'<script>{STATIC_JS if static else JS}</script></body></html>')

@@ -31,7 +31,7 @@ execution:
   max_order_pct_bar_dollar_volume: 1.0
   manage_timeframe: "1m"
   max_quote_age_seconds: 90
-  alpaca_paper_orders_enabled: false   # Alpaca PAPER order mirroring; off by default (see DECISIONS D56)
+  alpaca_paper_orders_enabled: true    # Alpaca PAPER mirror (paper-api only), approved by Kubiqq 2026-11-24 (DECISIONS D85)
 
 portfolio:
   starting_equity_usd: 1000.0
@@ -148,7 +148,7 @@ validation:
   stress_cost_multiplier: 1.5     # PF must stay > 1 with 50 % higher fees/slippage/spread
   max_age_days: 30                # stale validation -> quant unavailable (incomplete)
   auto_deploy_params: false       # walk-forward-selected parameters are reported, never deployed
-  forward_test_strategies: [news_momentum]   # not backtestable -> forward PAPER test on the internal $1,000 ledger only
+  forward_test_strategies: [news_momentum]   # not backtestable -> forward PAPER test on the internal $1,000 ledger (Alpaca PAPER mirror, D85)
   forward_test_quant_score: 50    # neutral quant score while forward-testing (no evidence either way)
   forward_test_target_trades: 30  # judge the forward test after >= 30 closed trades
 

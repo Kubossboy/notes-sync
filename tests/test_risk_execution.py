@@ -362,8 +362,9 @@ class RecSession:
                                json=lambda: {"id": "x", "status": "accepted"})
 
 
-def test_alpaca_orders_disabled_by_default(settings):
-    assert settings.execution.alpaca_paper_orders_enabled is False
+def test_alpaca_orders_blocked_when_flag_false(tmp_path):
+    settings = load_settings(overrides={"paths": {"database": str(tmp_path / "x.db"), "log_dir": str(tmp_path)},
+                                        "execution": {"alpaca_paper_orders_enabled": False}})
     sess = RecSession()
     b = AlpacaPaperBroker(settings, Secrets(alpaca_api_key_id="k", alpaca_api_secret_key="s"), sess)
     with pytest.raises(AlpacaOrdersDisabled):

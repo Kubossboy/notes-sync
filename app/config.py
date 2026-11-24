@@ -222,7 +222,7 @@ class ValidationSection(_Strict):
     max_age_days: float = Field(30, gt=0)                   # older validation -> quant unavailable
     auto_deploy_params: Literal[False] = False              # walk-forward winners are never auto-deployed
     # strategies that cannot be backtested (news-driven) may run a FORWARD PAPER TEST on the internal
-    # ledger only (never Alpaca orders); technical strategies that FAILED validation stay rejected
+    # ledger only (mirrored to Alpaca PAPER only, D85); technical strategies that FAILED validation stay rejected
     forward_test_strategies: list[str] = ["news_momentum"]
     forward_test_quant_score: float = Field(50.0, ge=0, le=100)   # neutral: no evidence either way yet
     forward_test_target_trades: int = Field(30, ge=10)

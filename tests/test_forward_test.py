@@ -3,6 +3,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from types import SimpleNamespace
 
 from app.data.calendar import catalyst_fresh, first_session_close_after
 from app.execution.trader import PaperTrader
@@ -28,7 +29,7 @@ def test_session_aware_freshness_after_close_earnings():
 def test_quant_forward_test_state(settings, db):
     qe = QuantEngine(settings, db)
     st = qe.status(__import__("app.data.models", fromlist=["AssetClass"]).AssetClass.STOCK, "news_momentum")
-    assert st["state"] == "forward_test" and "internal" in st["reason"] and "never Alpaca" in st["reason"]
+    assert st["state"] == "forward_test" and "internal" in st["reason"] and "Alpaca PAPER" in st["reason"]
     from app.data.models import AssetClass
     assert qe.status(AssetClass.CRYPTO, "orderbook_imbalance")["state"] == "unavailable"   # not configured
 
@@ -48,34 +49,77 @@ def test_risk_requires_validated_or_forward_test(env):
 
 
 class SpyBroker:
-    orders_enabled = True                                          # even if someone turned the flag on
+    """Stands in for AlpacaPaperBroker; records what would go to paper-api."""
+    orders_enabled = True
 
-    def __init__(self):
-        self.calls = 0
+    def __init__(self, tradable=True, fractionable=True):
+        self.orders, self.closed = [], []
+        self.info = SimpleNamespace(tradable=tradable, fractionable=fractionable, status="active")
 
-    def submit_bracket(self, *a, **k):
-        self.calls += 1
-        return {"id": "x", "status": "new"}
+    def asset(self, symbol):
+        return self.info
+
+    def submit_bracket(self, symbol, qty, stop, target, coid):
+        self.orders.append(("bracket", symbol, qty))
+        return {"id": "b1", "status": "accepted"}
+
+    def submit_market(self, symbol, qty, coid, crypto):
+        self.orders.append(("market", symbol, qty))
+        return {"id": "m1", "status": "accepted"}
+
+    def close_position(self, symbol):
+        self.closed.append(symbol)
+        return {"status": "submitted"}
 
 
-def test_forward_test_trade_logged_separately_and_never_mirrored(env):
+def test_forward_test_trade_logged_separately_and_mirrored_to_paper(env):
     broker = SpyBroker()
     tr = PaperTrader(env.s, env.db, env.safe, FakeEngine(), alpaca=broker)
     sid = add_signal(env.db, strategy="news_momentum", validation_status="forward_test")
     res = tr.execute_signal(_row(env, sid), NOW)
     assert res["approved"], res["reason"]
-    assert broker.calls == 0                                         # internal ledger only
+    assert res["alpaca"]["mirrored"] is True
+    kind, sym, qty = broker.orders[0]
+    assert qty == pytest.approx(res["fill"]["quantity"])            # sized from the ATLAS $1,000 ledger
+    assert qty * res["fill"]["fill_price"] <= 1000
+    ext = env.db.conn.execute("SELECT external_order_id, external_status FROM order_requests WHERE id=?",
+                              (res["fill"]["order_id"],)).fetchone()
+    assert ext["external_order_id"] in ("b1", "m1") and ext["external_status"].startswith("alpaca_paper:")
     pos = env.db.conn.execute("SELECT * FROM positions WHERE id=?", (res["fill"]["position_id"],)).fetchone()
     assert pos["validation_status"] == "forward_test"
     assert forward_test_stats(env.db)["open_trades"] == 1
     tr.engine.bars = [bar(NOW + timedelta(minutes=1), 100, 100.1, 98.8, 98.9)]
-    tr.run_once(NOW + timedelta(minutes=2), scan=False)
+    rep = tr.run_once(NOW + timedelta(minutes=2), scan=False)
+    assert broker.closed == [sym]                                    # internal exit mirrored
+    assert rep["managed"][0]["alpaca"]["mirrored"] is True
     st = forward_test_stats(env.db, "news_momentum")
     assert st["closed_trades"] == 1 and st["open_trades"] == 0 and st["net_pnl_usd"] < 0
     row = env.db.conn.execute("SELECT * FROM forward_test_trades").fetchone()
     assert row["exit_reason"] == "stop_loss" and row["planned_risk_usd"] <= 2.5
     with pytest.raises(sqlite3.DatabaseError):
         env.db.conn.execute("DELETE FROM forward_test_trades")
+
+
+def test_mirror_skips_untradable_and_never_blocks_internal_trade(env):
+    broker = SpyBroker(tradable=False)
+    tr = PaperTrader(env.s, env.db, env.safe, FakeEngine(), alpaca=broker)
+    res = tr.execute_signal(_row(env, add_signal(env.db)), NOW)
+    assert res["approved"] and res["alpaca"]["mirrored"] is False and "not tradable" in res["alpaca"]["reason"]
+    assert broker.orders == []
+    tr.engine.bars = [bar(NOW + timedelta(minutes=1), 100, 100.1, 98.8, 98.9)]
+    tr.run_once(NOW + timedelta(minutes=2), scan=False)
+    assert broker.closed == []                                       # nothing mirrored -> nothing to close
+
+
+def test_mirror_error_does_not_affect_ledger(env):
+    class Boom(SpyBroker):
+        def submit_bracket(self, *a, **k):
+            raise ConnectionError("alpaca paper POST /v2/orders: HTTP 500")
+        submit_market = submit_bracket
+    tr = PaperTrader(env.s, env.db, env.safe, FakeEngine(), alpaca=Boom())
+    res = tr.execute_signal(_row(env, add_signal(env.db)), NOW)
+    assert res["approved"] and res["alpaca"]["mirrored"] is False
+    assert env.db.conn.execute("SELECT COUNT(*) FROM positions WHERE status='open'").fetchone()[0] == 1
 
 
 def test_validated_trade_not_in_forward_log(env):
@@ -92,6 +136,7 @@ def test_m5_risk_limits_unchanged(settings):
     assert eq * r.max_risk_per_trade_pct / 100 == pytest.approx(2.5)
     assert eq * r.max_daily_loss_pct / 100 == pytest.approx(10)
     assert r.max_open_positions == 2 and r.min_reward_risk == 2.0
-    assert settings.execution.leverage_enabled is False and settings.execution.alpaca_paper_orders_enabled is False
+    assert settings.execution.leverage_enabled is False
+    assert settings.execution.alpaca_paper_orders_enabled is True     # D85: PAPER mirror, approved
     w = settings.scoring.weights
     assert w.news + w.sentiment >= 0.5 and w.technical + w.momentum_volume <= 0.2

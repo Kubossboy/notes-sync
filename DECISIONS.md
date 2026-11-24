@@ -99,3 +99,15 @@ Reversible technical decisions made during development. Newest last.
 - Unguessable location: random project name `atlas-<10 hex>` + random 24-char path slug, generated once into git-ignored `var/publish.json`; site root is a decoy "Not found". noindex via meta + `X-Robots-Tag` in `_headers`, robots.txt `Disallow: /`, no-referrer, no-store. This is obscurity, not access control - the snapshot contains only simulated paper-trading data.
 - Client refreshes top.html/state.json every 60 s and shows snapshot age (red when > 15 min).
 - `scripts/publish.sh` (export + `wrangler pages deploy`, needs CLOUDFLARE_API_TOKEN/ACCOUNT_ID in .env) is cron-able every 5 min; `scripts/publish_loop.sh` exists but is never auto-started.
+- Update (2026-11-24): Pages asset upload is not possible through the Cloudflare MCP session (upload JWT rejected), so the first live
+  deploy is a Worker on workers.dev that serves the same scrubbed export (`scripts/worker_bundle.py`). `scripts/publish.sh` deploys to
+  Pages with `wrangler` using `CLOUDFLARE_API_TOKEN` from the process env only (never .env/repo); account id lives in git-ignored var/publish.json.
+
+## D85 - Alpaca PAPER mirror enabled (approved by Kubiqq 2026-11-24)
+- `execution.alpaca_paper_orders_enabled: true`. Every approved internal entry - validated AND forward_test - is mirrored to
+  paper-api.alpaca.markets (live host stays on the forbidden list; URL assert unchanged). Supersedes "forward tests never mirrored" from Part A.
+- Sizing comes from the ATLAS risk engine on the internal $1,000 ledger (same qty), never from Alpaca's $100k/$200k BP; a mirror whose
+  notional exceeds ledger equity is skipped (no leverage). M5 limits unchanged.
+- Whole-share stocks -> bracket order; fractional stocks and crypto -> plain market buy (brackets can't carry them), exit mirrored when the
+  ledger closes (open legs cancelled, then DELETE position; 404 = already flat). Untradable / non-fractionable -> `alpaca_mirror_skipped`.
+- The internal ledger is the source of truth; Alpaca errors are journaled (`alpaca_mirror_failed`) and never alter the internal trade.

@@ -12,6 +12,7 @@ from app.data.engine import MarketDataEngine, asset_class_of
 from app.data.models import AssetClass, tf_seconds
 from app.database.db import Database
 from app.execution.alpaca_paper import AlpacaPaperBroker
+from app.execution.mirror import AlpacaMirror
 from app.execution.simulator import DuplicateOrder, PaperSimulator
 from app.portfolio.ledger import Ledger
 from app.risk.engine import MarketQuote, Proposal, RiskEngine
@@ -27,6 +28,7 @@ class PaperTrader:
         self.risk = RiskEngine(settings, db, safe, self.ledger)
         self.sim = PaperSimulator(settings, db, safe, self.ledger)
         self.alpaca = alpaca
+        self.mirror = AlpacaMirror(alpaca, db) if alpaca is not None else None
 
     # ------------------------------------------------------------------ market access
     def quote(self, symbol: str, now: datetime) -> MarketQuote | None:
@@ -67,7 +69,10 @@ class PaperTrader:
                     q = self.quote(sym, now)
                 except Exception:
                     q = None
-                out.append({"symbol": sym, **self.sim.manage_position(pos, bars, now, q)})
+                r = self.sim.manage_position(pos, bars, now, q)
+                if "reason" in r and self.mirror is not None:      # internal exit -> mirror it
+                    r["alpaca"] = self.mirror.close(pos["id"], sym, pos["asset_class"])
+                out.append({"symbol": sym, **r})
             except Exception as e:
                 # cannot watch the stop -> fail closed for NEW trades; position stays open, retried next cycle
                 self.db.log_error("execution.manage", e)
@@ -103,15 +108,11 @@ class PaperTrader:
         except DuplicateOrder as e:
             res.update(approved=False, reason=str(e))
             return res
-        if (self.alpaca is not None and self.alpaca.orders_enabled and p.asset_class == AssetClass.STOCK
-                and p.validation_status != "forward_test"):      # forward tests: internal ledger ONLY
-            try:   # mirror only; the internal ledger stays authoritative
-                o = self.alpaca.submit_bracket(p.symbol, d.quantity, p.stop, p.target, res["fill"]["client_order_id"])
-                self.db.conn.execute("UPDATE order_requests SET external_order_id=?, external_status=? WHERE id=?",
-                                     (o.get("id"), o.get("status"), res["fill"]["order_id"]))
-            except Exception as e:
-                self.db.log_error("execution.alpaca_paper", e)
-                self.db.log_event("alpaca_mirror_failed", "execution", str(e)[:300], "warning")
+        if self.mirror is not None and self.mirror.enabled:     # validated AND forward_test (D85); ledger = truth
+            f = res["fill"]
+            res["alpaca"] = self.mirror.open(p.symbol, p.asset_class.value, f["quantity"], f["fill_price"], p.stop,
+                                             p.target, f["client_order_id"], f["order_id"],
+                                             self.ledger.state(now).equity)
         return res
 
     # ------------------------------------------------------------------ public
@@ -145,7 +146,13 @@ class PaperTrader:
                     marks[pos["symbol"]] = self.quote(pos["symbol"], now)
                 except Exception:
                     marks[pos["symbol"]] = None
+            opened = {p["id"]: p for p in self.ledger.open_positions()}
             closed = self.sim.flatten_all(marks, "kill_switch", now)
+            if self.mirror is not None:
+                for c in closed:
+                    pos = opened.get(c["position_id"])
+                    if pos:
+                        c["alpaca"] = self.mirror.close(pos["id"], pos["symbol"], pos["asset_class"])
         st = self.ledger.state(now)
         self.ledger.snapshot(st, "kill switch")
         return {"halted": True, "closed": closed, "portfolio": summary(st, self.s)}

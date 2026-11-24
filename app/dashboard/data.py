@@ -127,7 +127,7 @@ def collect(settings: Settings, db_path: Path | str | None = None, now: datetime
         analytics = {"label": "SIMULATED trades", "all": trade_stats(closed),
                      "by_strategy": _group(closed, "strategy"), "by_asset_class": _group(closed, "asset_class"),
                      "by_validation_status": _group(closed, "validation_status")}
-        fwd = {"label": "SIMULATED forward paper test (internal ledger only, never Alpaca)",
+        fwd = {"label": "SIMULATED forward paper test (internal ledger = source of truth; Alpaca PAPER mirror only)",
                "strategies": settings.validation.forward_test_strategies,
                "target_trades": settings.validation.forward_test_target_trades, "stats": forward_test_stats(db),
                "recent": _rows(db, "SELECT closed_ts, symbol, strategy, entry_price, exit_price, pnl_usd, r_multiple, "
