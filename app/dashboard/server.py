@@ -90,23 +90,40 @@ async function pollLive() {
 }
 pollLive(); setInterval(pollLive, 5000);
 
-// ---- timeframe switcher (crypto: Coinbase public candles; stocks: snapshot candles only) ----
+// ---- TradingView Lightweight Charts: candles + price/time axes, pan/zoom, crosshair, timeframe switcher ----
+// crypto: Coinbase public candles; stocks: snapshot SVG only (labelled). Falls back to the server SVG if anything fails.
 const TF = {'1m': [60, 1], '5m': [300, 1], '15m': [900, 1], '1h': [3600, 1], '4h': [3600, 4], '1D': [86400, 1]};
-const TF_DEFAULT = '15m', NBARS = 64, CANDLES = {};
+const TF_DEFAULT = '15m', NBARS = 300, CANDLES = {}, CH = {};
+const HAS_LWC = typeof LightweightCharts !== 'undefined';
 const tfKey = sym => 'atlas_tf_' + sym;
 const getTf = sym => { try { const v = localStorage.getItem(tfKey(sym)); return TF[v] ? v : TF_DEFAULT; } catch (e) { return TF_DEFAULT; } };
 const setTf = (sym, tf) => { try { localStorage.setItem(tfKey(sym), tf); } catch (e) {} };
-const pxl = p => p >= 1000 ? fmt(p, 0) : p >= 1 ? fmt(p, 2) : p.toFixed(6);
+const tfSec = tf => TF[tf][0] * TF[tf][1];
+const localFmt = (t, withDate) => { const d = new Date(t * 1000);
+  return withDate ? d.toLocaleDateString([], {day: '2-digit', month: '2-digit'}) + ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})
+                  : d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}); };
+const baseOpts = () => ({
+  autoSize: true,
+  layout: {background: {color: '#11171e'}, textColor: '#9fb3c8', fontSize: 11, attributionLogo: true},
+  grid: {vertLines: {color: '#1b242e'}, horzLines: {color: '#1b242e'}},
+  rightPriceScale: {borderColor: '#26313d'},
+  timeScale: {borderColor: '#26313d', timeVisible: true, secondsVisible: false, rightOffset: 3,
+              tickMarkFormatter: (t, type) => type <= 2 ? new Date(t * 1000).toLocaleDateString([], {day: '2-digit', month: '2-digit'}) : localFmt(t, false)},
+  localization: {timeFormatter: t => localFmt(t, true)},
+  crosshair: {mode: 0},                              // free crosshair, price label on the right axis
+  handleScroll: {mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false},
+  handleScale: {mouseWheel: true, pinch: true, axisPressedMouseMove: true},
+});
 async function loadCandles(sym, tf) {
   const [gran, agg] = TF[tf];
   const r = await fetch('https://api.exchange.coinbase.com/products/' + encodeURIComponent(sym) + '/candles?granularity=' + gran, {cache: 'no-store'});
   if (!r.ok) throw new Error(r.status);
-  let rows = (await r.json()).map(a => ({t: a[0] * 1000, l: a[1], h: a[2], o: a[3], c: a[4]})).sort((a, b) => a.t - b.t);
-  if (agg > 1) {                                  // 4h = aggregate 4 x 1h, aligned to UTC 4h boundaries
-    const out = []; let cur = null; const span = gran * agg * 1000;
-    for (const k of rows) { const b = Math.floor(k.t / span) * span;
-      if (!cur || cur.t !== b) { cur = {t: b, o: k.o, h: k.h, l: k.l, c: k.c}; out.push(cur); }
-      else { cur.h = Math.max(cur.h, k.h); cur.l = Math.min(cur.l, k.l); cur.c = k.c; } }
+  let rows = (await r.json()).map(a => ({time: a[0], low: a[1], high: a[2], open: a[3], close: a[4]})).sort((a, b) => a.time - b.time);
+  if (agg > 1) {                                     // 4h = aggregate 4 x 1h on UTC 4h boundaries
+    const out = []; let cur = null; const span = gran * agg;
+    for (const k of rows) { const b = Math.floor(k.time / span) * span;
+      if (!cur || cur.time !== b) { cur = {time: b, open: k.open, high: k.high, low: k.low, close: k.close}; out.push(cur); }
+      else { cur.high = Math.max(cur.high, k.high); cur.low = Math.min(cur.low, k.low); cur.close = k.close; } }
     rows = out;
   }
   rows = rows.slice(-NBARS);
@@ -114,54 +131,91 @@ async function loadCandles(sym, tf) {
   CANDLES[sym + '|' + tf] = {rows, at: Date.now()};
   return rows;
 }
-function chartSvg(rows, entry, stop, target, mark, tf) {
-  const w = 640, h = 260, pl = 8, pr = 96, pt = 10, pb = 22;
-  let lo = Math.min(stop, ...rows.map(k => k.l)), hi = Math.max(target, ...rows.map(k => k.h));
-  const span = (hi - lo) || 1; lo -= span * 0.04; hi += span * 0.04;
-  const y = p => pt + (hi - p) / (hi - lo) * (h - pt - pb), n = rows.length, cw = (w - pl - pr) / n;
-  const P = ['<svg viewBox="0 0 ' + w + ' ' + h + '" class="chart" role="img" aria-label="price chart ' + tf + '" data-lo="' + lo + '" data-hi="' + hi + '" data-pt="' + pt + '" data-pb="' + pb + '" data-h="' + h + '" data-tf="' + tf + '">'];
-  rows.forEach((k, i) => {
-    const x = pl + i * cw + cw / 2, col = k.c >= k.o ? '#34d399' : '#f87171', last = i === n - 1;
-    P.push('<line' + (last ? ' class="lcw" data-hh="' + k.h + '" data-ll="' + k.l + '"' : '') + ' x1="' + x.toFixed(1) + '" x2="' + x.toFixed(1) + '" y1="' + y(k.h).toFixed(1) + '" y2="' + y(k.l).toFixed(1) + '" stroke="' + col + '" stroke-width="1"/>');
-    const top = y(Math.max(k.o, k.c)), bot = y(Math.min(k.o, k.c));
-    P.push('<rect' + (last ? ' class="lcb" data-o="' + k.o + '"' : '') + ' x="' + (x - cw * 0.35).toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + (cw * 0.7).toFixed(1) + '" height="' + Math.max(bot - top, 1).toFixed(1) + '" fill="' + col + '"/>');
-  });
-  [['target', target, '#34d399'], ['entry', entry, '#60a5fa'], ['stop', stop, '#f87171']].forEach(([lb, p, col]) => {
-    P.push('<line x1="' + pl + '" x2="' + (w - pr) + '" y1="' + y(p).toFixed(1) + '" y2="' + y(p).toFixed(1) + '" stroke="' + col + '" stroke-dasharray="5 4" stroke-width="1.4"/><text x="' + (w - pr + 4) + '" y="' + (y(p) + 4).toFixed(1) + '" fill="' + col + '" font-size="11">' + lb + ' ' + pxl(p) + '</text>');
-  });
-  if (mark) P.push('<circle class="mk" cx="' + (w - pr) + '" cy="' + y(mark).toFixed(1) + '" r="3.5" fill="#fbbf24"/>');
-  const lab = t => { const d = new Date(t); return tf === '1D' || tf === '4h' ? d.toLocaleDateString([], {day: '2-digit', month: '2-digit'}) + (tf === '4h' ? ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : '') : d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}); };
-  [0, n >> 1, n - 1].forEach(i => P.push('<text x="' + (pl + i * cw).toFixed(1) + '" y="' + (h - 6) + '" fill="#718396" font-size="10">' + lab(rows[i].t) + '</text>'));
-  P.push('</svg>');
-  return P.join('');
-}
-function decorate(sec) {                           // add the switcher once per (re)rendered position panel
-  const d = sec.dataset, svg = sec.querySelector('svg.chart, .empty');
-  if (sec.querySelector('.tfs, .tfnote') || !svg) return;
-  if (d.ac !== 'crypto') { svg.insertAdjacentHTML('beforebegin', '<div class="tfnote">snapshot candles only (no free live stock feed) - timeframe fixed</div>'); return; }
+function setNote(sec, txt) { const n = sec.querySelector('.tfsrc'); if (n) n.textContent = txt; }
+function decorate(sec) {                             // switcher once per position panel (each chart has its own)
+  const d = sec.dataset, anchor = sec.querySelector('.lwc, svg.chart, .empty');
+  if (sec.querySelector('.tfs, .tfnote') || !anchor) return;
+  if (d.ac !== 'crypto' || !HAS_LWC) {
+    anchor.insertAdjacentHTML('beforebegin', '<div class="tfnote">' + (d.ac !== 'crypto' ? 'snapshot candles only (no free live stock feed) - timeframe fixed' : 'chart library unavailable - snapshot chart') + '</div>'); return; }
   const cur = getTf(d.sym);
-  svg.insertAdjacentHTML('beforebegin', '<div class="tfs" role="group" aria-label="chart timeframe">' + Object.keys(TF).map(tf => '<button type="button" data-tf="' + tf + '" class="' + (tf === cur ? 'on' : '') + '" aria-pressed="' + (tf === cur) + '">' + tf + '</button>').join('') + '</div>');
+  anchor.insertAdjacentHTML('beforebegin', '<div class="tfs" role="group" aria-label="chart timeframe">' + Object.keys(TF).map(tf => '<button type="button" data-tf="' + tf + '" class="' + (tf === cur ? 'on' : '') + '" aria-pressed="' + (tf === cur) + '">' + tf + '</button>').join('') + '</div>');
   sec.querySelectorAll('.tfs button').forEach(b => b.addEventListener('click', () => { setTf(d.sym, b.dataset.tf); drawChart(sec, true); }));
 }
+function ensureChart(sec) {
+  const sym = sec.dataset.sym; let c = CH[sym];
+  if (c && document.body.contains(c.el)) return c;
+  if (c) { try { c.chart.remove(); } catch (e) {} delete CH[sym]; }
+  const old = sec.querySelector('svg.chart, .empty, .lwc'); if (!old) return null;
+  const el = document.createElement('div'); el.className = 'lwc'; old.replaceWith(el);
+  const chart = LightweightCharts.createChart(el, baseOpts());
+  const series = chart.addSeries(LightweightCharts.CandlestickSeries, {upColor: '#34d399', downColor: '#f87171', borderVisible: false,
+    wickUpColor: '#34d399', wickDownColor: '#f87171', priceFormat: {type: 'price', precision: 2, minMove: 0.01},
+    // TradingView-style current price: dashed line + axis label, coloured by the last candle (green up / red down)
+    priceLineVisible: true, lastValueVisible: true, priceLineSource: LightweightCharts.PriceLineSource.LastBar,
+    priceLineStyle: 2, priceLineWidth: 1, priceLineColor: ''});
+  const d = sec.dataset;
+  [['target', +d.target, '#34d399'], ['entry', +d.entry, '#60a5fa'], ['stop', +d.stop, '#f87171']].forEach(([title, price, color]) =>
+    series.createPriceLine({price, color, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title}));
+  c = CH[sym] = {el, chart, series, tf: null, last: null};
+  return c;
+}
 async function drawChart(sec, fetchNow) {
-  const d = sec.dataset; if (d.ac !== 'crypto') return;
+  const d = sec.dataset; if (d.ac !== 'crypto' || !HAS_LWC) return;
   const tf = getTf(d.sym), key = d.sym + '|' + tf;
   sec.querySelectorAll('.tfs button').forEach(b => { const on = b.dataset.tf === tf; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
-  let c = CANDLES[key];
-  if (!c || fetchNow || Date.now() - c.at > 30000) {
-    try { await loadCandles(d.sym, tf); c = CANDLES[key]; } catch (e) { if (!c) { setNote(sec, tf + ': live candles unavailable - showing snapshot chart'); return; } }
+  let cd = CANDLES[key];
+  if (!cd || fetchNow || Date.now() - cd.at > 30000) {
+    try { await loadCandles(d.sym, tf); cd = CANDLES[key]; } catch (e) { if (!cd) { setNote(sec, tf + ': live candles unavailable - showing snapshot chart'); return; } }
   }
-  const old = sec.querySelector('svg.chart, .empty'); if (!old) return;
-  const px = LIVE[d.sym];
-  old.outerHTML = chartSvg(c.rows, +d.entry, +d.stop, +d.target, px ? px.price : +d.mark, tf);
-  setNote(sec, tf + ' candles · Coinbase (REAL, live)');
-  applyLive();
+  const c = ensureChart(sec); if (!c) return;
+  const tfChanged = c.tf !== tf;
+  c.series.setData(cd.rows.map(k => ({...k})));
+  c.last = {...cd.rows[cd.rows.length - 1]}; c.tf = tf;
+  if (tfChanged) { c.chart.timeScale().setVisibleLogicalRange({from: cd.rows.length - 80, to: cd.rows.length + 3}); }
+  setNote(sec, tf + ' candles · Coinbase (REAL, live) · drag to pan, wheel/pinch to zoom');
+  lwcTick(sec);
 }
-function setNote(sec, txt) { const n = sec.querySelector('.tfsrc'); if (n) n.textContent = txt; }
+function lwcTick(sec) {                              // 5 s live update of the last candle on the selected timeframe
+  const sym = sec.dataset.sym, c = CH[sym], px = LIVE[sym];
+  if (!c || !c.last || !px) return;
+  const span = tfSec(c.tf), t = Math.floor(px.t / 1000 / span) * span;
+  if (t > c.last.time) c.last = {time: t, open: c.last.close, high: px.price, low: px.price, close: px.price};
+  else if (t === c.last.time) c.last = {...c.last, high: Math.max(c.last.high, px.price), low: Math.min(c.last.low, px.price), close: px.price};
+  else return;
+  try { c.series.update(c.last); } catch (e) {}
+}
+// ---- balance chart: line series with a price axis (from state.json + live equity point) ----
+const EQ = {chart: null, series: null, el: null, pts: []};
+function eqData(curve) {
+  const m = new Map(); (curve || []).forEach(([ts, v]) => { const t = Math.floor(Date.parse(ts) / 1000); if (t > 0) m.set(t, +v); });
+  return [...m.entries()].sort((a, b) => a[0] - b[0]).map(([time, value]) => ({time, value}));
+}
+function drawEquity(curve) {
+  if (!HAS_LWC) return;
+  const pts = eqData(curve), sec = document.getElementById('eqsec'); if (!sec || pts.length < 2) return;
+  if (!EQ.chart || !document.body.contains(EQ.el)) {
+    if (EQ.chart) { try { EQ.chart.remove(); } catch (e) {} }
+    const old = sec.querySelector('svg.chart, .empty, .lwc'); if (!old) return;
+    EQ.el = document.createElement('div'); EQ.el.className = 'lwc eq'; old.replaceWith(EQ.el);
+    EQ.chart = LightweightCharts.createChart(EQ.el, baseOpts());
+    EQ.series = EQ.chart.addSeries(LightweightCharts.LineSeries, {color: '#60a5fa', lineWidth: 2, priceFormat: {type: 'price', precision: 2, minMove: 0.01}});
+    EQ.series.createPriceLine({price: +sec.dataset.start, color: '#4b5563', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'start'});
+  }
+  EQ.pts = pts; EQ.series.setData(pts); EQ.chart.timeScale().fitContent();
+}
+function eqTick() {
+  const el = document.getElementById('lv-eq'); if (!EQ.series || !el || !EQ.pts.length) return;
+  const v = parseFloat(el.textContent.replace(/[$,]/g, '')); if (!isFinite(v)) return;
+  const t = Math.max(Math.floor(Date.now() / 1000), EQ.pts[EQ.pts.length - 1].time + 1);
+  try { EQ.series.update({time: t, value: v}); } catch (e) {}
+}
+const _applyLive = applyLive;
+applyLive = function () { _applyLive(); document.querySelectorAll('section.posbox[data-sym]').forEach(lwcTick); eqTick(); };
 const URL_TF = new URLSearchParams(location.search).get('tf');   // e.g. ?tf=1h preselects for every chart
 if (TF[URL_TF]) document.querySelectorAll('section.posbox[data-sym]').forEach(sec => setTf(sec.dataset.sym, URL_TF));
 function initCharts(fetchNow) { document.querySelectorAll('section.posbox[data-sym]').forEach(sec => { decorate(sec); drawChart(sec, fetchNow); }); }
 initCharts(false); setInterval(() => initCharts(false), 30000);
+fetch('state.json?t=' + Date.now(), {cache: 'no-store'}).then(r => r.ok ? r.json() : null).then(st => st && drawEquity(st.equity_curve)).catch(() => {});
 """
 
 STATIC_JS = """
@@ -170,12 +224,31 @@ function age(ts){ const m = Math.round((Date.now() - Date.parse(ts)) / 60000);
   upd.textContent = 'snapshot ' + new Date(ts).toLocaleString() + ' (' + m + ' min ago) · auto-refresh 60 s';
   upd.className = m > 15 ? 'tag bad' : 'muted'; }
 age(document.body.dataset.gen);
+// Refresh positions/trades from the box without destroying interactive charts (keeps pan/zoom):
+// full re-render only when the set of open positions changed.
+function refreshTop(html) {
+  const tmp = document.createElement('div'); tmp.innerHTML = html;
+  const top = document.getElementById('top');
+  const key = el => [...el.querySelectorAll('section.posbox[data-sym]')].map(s => s.dataset.sym + '@' + s.dataset.entry).join('|');
+  if (key(tmp) !== key(top)) { top.innerHTML = html; return true; }
+  const nc = tmp.querySelector('.cards'), oc = top.querySelector('.cards'); if (nc && oc) oc.replaceWith(nc);
+  tmp.querySelectorAll('section.posbox[data-sym]').forEach(ns => {
+    const os = top.querySelector('section.posbox[data-sym="' + ns.dataset.sym + '"]'); if (!os) return;
+    Object.assign(os.dataset, ns.dataset);
+    ['h2', '.posline'].forEach(q => { const a = os.querySelector(q), b = ns.querySelector(q); if (a && b) a.innerHTML = b.innerHTML; });
+    const a = os.querySelector('.sub'), b = ns.querySelector('.sub'); if (a && b) { const keep = a.querySelector('.tfsrc'); a.innerHTML = b.innerHTML; const nn = a.querySelector('.tfsrc'); if (keep && nn) nn.textContent = keep.textContent; }
+  });
+  return false;
+}
 setInterval(async () => {
   try {
     const s = await fetch('state.json?t=' + Date.now(), {cache: 'no-store'});
     const t = await fetch('top.html?t=' + Date.now(), {cache: 'no-store'});
-    if (s.ok && t.ok) { const st = await s.json(); document.getElementById('top').innerHTML = await t.text();
-      document.body.dataset.gen = st.generated_ts; if (typeof initCharts === 'function') initCharts(false); if (typeof applyLive === 'function') applyLive(); }
+    if (s.ok && t.ok) { const st = await s.json(); refreshTop(await t.text());
+      document.body.dataset.gen = st.generated_ts;
+      if (typeof initCharts === 'function') initCharts(false);
+      if (typeof drawEquity === 'function') drawEquity(st.equity_curve);
+      if (typeof applyLive === 'function') applyLive(); }
   } catch (e) {}
   age(document.body.dataset.gen);
 }, 60000);
@@ -208,6 +281,9 @@ th{color:#8193a6;font-weight:600}td.n{text-align:right;font-variant-numeric:tabu
 .tfs{display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 8px}.tfs button{min-height:36px;min-width:46px;padding:6px 12px;border-radius:8px;border:1px solid #26313d;background:#11171e;color:#d8dee6;font:600 13px system-ui,sans-serif;cursor:pointer;touch-action:manipulation}
 .tfs button.on{background:#1e3a5f;border-color:#60a5fa;color:#fff}.tfs button:disabled{opacity:.5}.tfnote{color:#8193a6;font-size:12px;margin:2px 0 6px}
 @media (max-width:600px){.tfs button{min-height:42px;flex:1 1 0;min-width:0;padding:8px 4px}}
+.lwc{width:100%;height:320px;border-radius:6px;overflow:hidden;background:#11171e}.lwc.eq{height:240px}
+@media (max-width:600px){.lwc{height:300px}.lwc.eq{height:220px}}
+.attr{color:#718396;font-size:11.5px;text-align:center;padding:14px 10px 24px}.attr a{color:#9fb3c8}
 .demo{background:#7c2d12;color:#fff;font-weight:700;padding:10px 20px;text-align:center;letter-spacing:.03em}
 """
 
@@ -297,12 +373,18 @@ def _position_panels(d: dict) -> str:
 
 def _equity_panel(d: dict) -> str:
     from app.dashboard.charts import equity_svg
-    return ('<section><h2>Account balance <span class="tag sim">SIMULATED equity</span></h2>'
+    return (f'<section id="eqsec" data-start="{d["start_equity"]}"><h2>Account balance <span class="tag sim">SIMULATED equity</span></h2>'
             + equity_svg(d["equity_curve"], d["start_equity"]) + '</section>')
 
 
 def render_top(d: dict) -> str:
     return _cards(d) + _position_panels(d) + _equity_panel(d)
+
+
+# Apache-2.0 attribution required by TradingView Lightweight Charts (vendored in app/dashboard/vendor/)
+ATTRIBUTION = ('<div class="attr">Charts: TradingView Lightweight Charts&trade; - Copyright (c) 2025 TradingView, Inc. '
+               '<a href="https://www.tradingview.com/" rel="noopener noreferrer" target="_blank">tradingview.com</a> '
+               '(Apache License 2.0)</div>')
 
 
 def render(d: dict, demo: bool = False, static: bool = False) -> str:
@@ -388,7 +470,9 @@ def render(d: dict, demo: bool = False, static: bool = False) -> str:
             f'<span class="tag sim">PAPER ONLY · Alpaca paper mirror {"ON" if o["alpaca_paper_orders_enabled"] else "OFF"}</span>'
             f'{safe_html}{'<span class="tag warn" id="live">SNAPSHOT prices</span>' if static else ''}<span class="muted" id="upd">updated {_t(d["generated_ts"])} Prague · auto-refresh 30 s</span></header>'
             f'<main><div id="top">{render_top(d)}</div><h2 class="dh">Details</h2>{det}</main>'
-            f'<script>{(STATIC_JS + LIVE_JS) if static else JS}</script></body></html>')
+            + (ATTRIBUTION if static else "")
+            + ('<script src="lwc.js"></script>' if static else "")
+            + f'<script>{(STATIC_JS + LIVE_JS) if static else JS}</script></body></html>')
 
 
 def make_handler(settings: Settings, db_path=None, live_prices: bool = True, demo: bool = False):

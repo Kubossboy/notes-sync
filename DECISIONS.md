@@ -147,3 +147,15 @@ Reversible technical decisions made during development. Newest last.
   candle and price dot on whichever timeframe is shown. Entry / stop / target lines are redrawn on every timeframe.
 - Choice remembered per symbol in localStorage (default 15m); `?tf=1h` preselects. Stocks keep snapshot candles, labelled.
 - The buttons only change the view - the page still has no trading controls, forms or POSTs.
+
+## D90 - TradingView Lightweight Charts on the public dashboard
+- Vendored `lightweight-charts@5.3.0` standalone build (Apache-2.0) in `app/dashboard/vendor/` with LICENSE + NOTICE; the export
+  ships it as `lwc.js` (no CDN). Attribution per the license: NOTICE text + tradingview.com link in the page footer, plus the
+  chart `attributionLogo`.
+- Position charts: candlesticks with right price scale + time scale (local time), drag/touch pan, wheel/pinch zoom
+  (vertical touch drag left to page scrolling on phones), free crosshair with price label, entry/stop/target as dashed price
+  lines with axis labels, TradingView-style current-price line + axis label coloured by the last candle (green up / red down),
+  live last-candle update every 5 s (new bar opened when the timeframe period rolls), per-chart timeframe switcher (D89).
+  Balance chart: line series with price axis and a dashed "start" line, live equity point appended every 5 s.
+- The 60 s state refresh now patches cards/position text in place and only re-renders when the set of open positions changes,
+  so pan/zoom isn't reset. Server-rendered SVG stays as the no-JS / no-library fallback; stocks stay snapshot-only.

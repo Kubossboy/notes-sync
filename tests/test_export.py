@@ -61,3 +61,13 @@ def test_static_page_has_timeframe_switcher(settings, dash_db, tmp_path):
     for s in ("/candles?granularity=", "'1m': [60, 1]", "'4h': [3600, 4]", "'1D': [86400, 1]", "TF_DEFAULT = '15m'",
               "localStorage", "snapshot candles only"):
         assert s in page, s
+
+
+def test_static_page_uses_vendored_lightweight_charts(settings, dash_db, tmp_path):
+    site = export(settings, tmp_path / "s", "slug", settings.db_path, live_prices=False)
+    page = (site / "index.html").read_text()
+    assert (site / "lwc.js").stat().st_size > 100_000                 # vendored, no CDN
+    assert '<script src="lwc.js"></script>' in page and "cdn" not in page.lower()
+    assert "TradingView Lightweight Charts" in page and "https://www.tradingview.com/" in page   # Apache-2.0 attribution
+    for s in ("createPriceLine", "CandlestickSeries", "LineSeries", "pinch: true", "id=\"eqsec\""):
+        assert s in page, s

@@ -16,6 +16,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -29,6 +30,7 @@ _QURL = re.compile(r"https?://[^\s'\"<>]*\?[^\s'\"<>]*")
 _TOKEN = re.compile(r"\b(?=[A-Za-z0-9_\-]*\d)(?=[A-Za-z0-9_\-]*[A-Za-z])[A-Za-z0-9_\-]{32,}\b")
 _SECRET_ENV = re.compile(r"(KEY|SECRET|TOKEN|PASSWORD|BEARER|EMAIL)", re.I)
 RED = "[redacted]"
+VENDOR = Path(__file__).resolve().parent / "vendor"
 
 
 def _secret_values() -> list[str]:
@@ -91,6 +93,7 @@ def export(settings: Settings, out: Path, slug: str, db_path=None, live_prices: 
     site.mkdir(parents=True, exist_ok=True)
     (site / "index.html").write_text(render(d2, static=True))
     (site / "top.html").write_text(render_top(d2))
+    shutil.copyfile(VENDOR / "lightweight-charts.standalone.production.js", site / "lwc.js")   # Apache-2.0, vendored
     public = {k: d[k] for k in ("generated_ts", "overview", "forward_test", "equity_curve", "start_equity") if k in d}
     public["positions"] = [{k: v for k, v in p.items() if k != "candles"} for p in d.get("portfolio", [])]
     (site / "state.json").write_text(json.dumps(public, default=str, indent=1))
