@@ -9,7 +9,7 @@ from app.core.logging_setup import get_logger, setup_logging
 from app.core.safety import SafeState, assert_paper_only
 from app.database.db import Database, utcnow
 
-VERSION = "0.1.0-m1"
+VERSION = "0.2.0-m2"
 
 
 @dataclass
