@@ -160,6 +160,10 @@ touch var/STOP                                             # stop the loop after
 Other commands: `python -m app.main halt <reason>` (enter SAFE STATE: no new
 simulated trades) and `python -m app.main resume --by <name>` (journaled).
 
+
+Dashboard v2: 5 summary cards, a live candle chart per open position (2 positions = side by side), a simulated equity curve, and collapsed detail panels; top section auto-refreshes every 30 s.
+DEMO of the 2-position layout (throwaway /tmp DB copy, never the real ledger): `.venv/bin/python scripts/dashboard_demo.py 60` then open http://127.0.0.1:8799/.
+
 ## Layout
 
 ```

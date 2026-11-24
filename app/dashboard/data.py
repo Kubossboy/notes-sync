@@ -70,7 +70,9 @@ def _group(trades, key):
     return {k: trade_stats(v) for k, v in sorted(out.items())}
 
 
-def collect(settings: Settings, db_path: Path | str | None = None, now: datetime | None = None) -> dict:
+def collect(settings: Settings, db_path: Path | str | None = None, now: datetime | None = None,
+            live_prices: bool = False) -> dict:
+    """live_prices=True fetches recent public candles for open positions (read-only HTTP)."""
     from app.core.bootstrap import VERSION
     now = now or datetime.now(timezone.utc)
     db = ReadOnlyDB(db_path or settings.db_path)
@@ -100,6 +102,14 @@ def collect(settings: Settings, db_path: Path | str | None = None, now: datetime
                                         - p["fees_usd"], 4),
             "stop_loss": p["stop_loss"], "take_profit": p["take_profit"], "opened_ts": p["opened_ts"],
             "planned_risk_usd": p["planned_risk_usd"]} for p in opens]
+        from app.dashboard.charts import db_candles, equity_points, fetch_candles
+        for p in portfolio:
+            tf = "15m" if p["asset_class"] == "crypto" else "5m"
+            c, tf, src = fetch_candles(p["symbol"], p["asset_class"]) if live_prices else ([], tf, "none")
+            if not c:
+                c, tf, src = db_candles(db, p["symbol"], tf)
+            p["candles"], p["chart_tf"], p["chart_source"] = c, tf, src
+        equity_curve = equity_points(db, st.equity, now)
         sigs = _rows(db, "SELECT s.*, sc.total_score, sc.score_on_available FROM signals s LEFT JOIN signal_scores sc "
                          "ON sc.signal_id = s.id ORDER BY s.id DESC LIMIT 40")
         scanner = []
@@ -158,6 +168,7 @@ def collect(settings: Settings, db_path: Path | str | None = None, now: datetime
                                "alpaca_paper_orders": v.execution.alpaca_paper_orders_enabled,
                                "x_social": False}}
         return {"generated_ts": now.isoformat(), "overview": overview, "portfolio": portfolio, "scanner": scanner,
+                "equity_curve": equity_curve, "start_equity": settings.portfolio.starting_equity_usd,
                 "analytics": analytics, "forward_test": fwd, "validation": validation, "news": news,
                 "risk": risk, "system": system}
     finally:

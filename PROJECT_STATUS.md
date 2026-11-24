@@ -1,6 +1,6 @@
 # PROJECT STATUS – ATLAS Trading AI
 
-_Last updated: 2026-11-24 (Europe/Prague) · version 0.7.0-m7_
+_Last updated: 2026-11-24 (Europe/Prague) · version 0.7.1-m7 (dashboard v2: cards, position charts, equity curve)_
 
 ## Current development phase
 Milestone 7 – Dashboard: **complete** (plus the news-driven forward test). Next: Milestone 8 – continuous paper trading.

@@ -1,7 +1,8 @@
 """Local monitoring dashboard (Milestone 7): stdlib HTTP server, server-rendered HTML + JSON API.
 
 Read-only (SQLite mode=ro, no buttons that trade, halt or send anything), bound to 127.0.0.1 by default.
-  GET /            HTML dashboard (auto-refresh 30 s)
+  GET /            HTML dashboard (top section auto-refreshes every 30 s via /fragment/top)
+  GET /fragment/top  cards + open-position charts + balance chart (HTML fragment)
   GET /api/state   same data as JSON
   GET /healthz     "ok"
 """
@@ -19,21 +20,41 @@ from app.dashboard.data import collect
 PRAGUE = ZoneInfo("Europe/Prague")
 E = html.escape
 
+JS = """
+setInterval(async () => {
+  try {
+    const r = await fetch('/fragment/top', {cache: 'no-store'});
+    if (r.ok) { document.getElementById('top').innerHTML = await r.text();
+      document.getElementById('upd').textContent = 'updated ' + new Date().toLocaleTimeString() + ' · auto-refresh 30 s'; }
+  } catch (e) {}
+}, 30000);
+"""
+
 CSS = """
-body{font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#0f1419;color:#d8dee6}
-header{padding:14px 24px;background:#151c24;border-bottom:1px solid #26313d;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
-h1{font-size:18px;margin:0}h2{font-size:15px;margin:0 0 10px;color:#9fb3c8;text-transform:uppercase;letter-spacing:.06em}
-main{padding:18px 24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(560px,1fr));gap:18px}
-section{background:#151c24;border:1px solid #26313d;border-radius:8px;padding:14px 16px;overflow-x:auto}
-section.wide{grid-column:1/-1}
-table{border-collapse:collapse;width:100%;font-size:12.5px}th,td{padding:5px 8px;border-bottom:1px solid #222c37;text-align:left;vertical-align:top}
+*{box-sizing:border-box}body{font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#0f1419;color:#d8dee6}
+header{padding:12px 20px;background:#151c24;border-bottom:1px solid #26313d;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+h1{font-size:19px;margin:0;letter-spacing:.04em}h2{font-size:14px;margin:0 0 10px;color:#9fb3c8;text-transform:uppercase;letter-spacing:.05em}
+h2.dh{margin:22px 0 8px}h3{font-size:13px;color:#9fb3c8;margin:14px 0 6px}
+main{padding:16px 20px;max-width:1500px;margin:0 auto}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin-bottom:14px}
+.card{background:#151c24;border:1px solid #26313d;border-radius:10px;padding:14px 16px}
+.lbl{color:#8193a6;font-size:12px;text-transform:uppercase;letter-spacing:.05em}.val{font-size:28px;font-weight:650;margin:4px 0}
+.sub{color:#8193a6;font-size:12.5px}.pos{color:#34d399}.neg{color:#f87171}
+.bar{height:6px;background:#26313d;border-radius:3px;margin:4px 0 6px}.bar i{display:block;height:100%;background:#60a5fa;border-radius:3px}
+section{background:#151c24;border:1px solid #26313d;border-radius:10px;padding:14px 16px;margin-bottom:14px;overflow-x:auto}
+.posgrid{display:grid;gap:14px;margin-bottom:0}.posgrid.n2{grid-template-columns:1fr 1fr}.posgrid.n1{grid-template-columns:1fr}
+@media (max-width:900px){.posgrid.n2{grid-template-columns:1fr}.val{font-size:24px}}
+.posline{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;margin-bottom:6px}
+svg.chart{width:100%;height:auto;display:block;background:#11171e;border-radius:6px}
+details{background:#151c24;border:1px solid #26313d;border-radius:10px;padding:10px 16px;margin-bottom:10px;overflow-x:auto}
+summary{cursor:pointer;font-weight:600}details[open] summary{margin-bottom:10px}
+table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:6px 8px;border-bottom:1px solid #222c37;text-align:left;vertical-align:top}
 th{color:#8193a6;font-weight:600}td.n{text-align:right;font-variant-numeric:tabular-nums}
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
-.kpi{background:#1b242e;border-radius:6px;padding:10px}.kpi b{display:block;font-size:20px;margin-top:2px}
-.tag{display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:600}
+.tag{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600}
 .sim{background:#3b2f0b;color:#f3c969}.real{background:#0d3324;color:#6ee7b7}.bad{background:#3d1416;color:#fca5a5}
 .ok{background:#0d3324;color:#6ee7b7}.warn{background:#3b2f0b;color:#f3c969}.muted{color:#718396}
-.empty{color:#718396;font-style:italic;padding:6px 0}
+.empty{color:#8193a6;font-style:italic;padding:10px 0}
+.demo{background:#7c2d12;color:#fff;font-weight:700;padding:10px 20px;text-align:center;letter-spacing:.03em}
 """
 
 
@@ -66,123 +87,146 @@ def _status_tag(s: str | None) -> str:
     return f'<span class="tag {cls}">{E(s or "–")}</span>'
 
 
-def render(d: dict) -> str:
+def _cards(d: dict) -> str:
+    o, fw = d["overview"], d["forward_test"]
+    fs, safe = fw["stats"], o["safe_state"]
+    pnl_cls = lambda v: "pos" if (v or 0) > 0 else "neg" if (v or 0) < 0 else ""  # noqa: E731
+    risk_ok = not safe["halted"] and not o["daily_limit_reached"]
+    risk_txt = ("SAFE STATE: " + (safe["reason"] or "halted")) if safe["halted"] else (
+        "Daily limit reached - no new trades" if o["daily_limit_reached"] else "Normal - trading allowed")
+    prog = min(100, fs["closed_trades"] / max(fw["target_trades"], 1) * 100)
+    card = lambda label, val, sub="", cls="": (f'<div class="card"><div class="lbl">{E(label)}</div>'  # noqa: E731
+                                              f'<div class="val {cls}">{val}</div><div class="sub">{sub}</div></div>')
+    return '<div class="cards">' + "".join([
+        card("Balance (equity)", _n(o["equity"], pre="$"), f'cash {_n(o["cash"], pre="$")} · total '
+             f'<span class="{pnl_cls(o["total_pnl"])}">{_n(o["total_pnl"], pre="$")}</span>'),
+        card("Today P&L", _n(o["daily_pnl"], pre="$"), f'trading day {E(o["trading_day"])} (New York)',
+             pnl_cls(o["daily_pnl"])),
+        card("Open positions", f'{o["open_positions"]} / {o["max_open_positions"]}',
+             f'risk per trade {_n(o["risk_per_trade"], pre="$")}'),
+        card("Risk status", '<span class="tag %s">%s</span>' % ("ok" if risk_ok else "bad", "OK" if risk_ok else "STOP"),
+             f'{E(risk_txt)}<br>daily loss {_n(o["daily_loss"], pre="$")} / {_n(o["daily_loss_limit"], pre="$")}'),
+        card("Forward test (news)", f'{fs["closed_trades"]} / {fw["target_trades"]}',
+             f'<div class="bar"><i style="width:{prog:.0f}%"></i></div>net {_n(fs["net_pnl_usd"], pre="$")} · '
+             f'win {_n(fs["win_rate"] * 100 if fs["win_rate"] is not None else None, 0)}% · open {fs["open_trades"]}'),
+    ]) + "</div>"
+
+
+def _position_panels(d: dict) -> str:
+    from app.dashboard.charts import position_chart_svg
+    ps = d["portfolio"]
+    if not ps:
+        return ('<section><h2>Open positions <span class="tag sim">SIMULATED</span></h2><div class="empty">No open '
+                'positions. Charts appear here when ATLAS opens a paper trade (1 position = full width, 2 = side by '
+                'side).</div></section>')
+    panels = []
+    for p in ps:
+        u = p["unrealized_pnl_usd"]
+        panels.append(
+            f'<section class="posbox"><h2>{E(p["symbol"])} <span class="tag sim">SIMULATED position</span> '
+            f'{_status_tag(p["validation_status"])}</h2>'
+            f'<div class="posline"><span>{E(p["strategy"])}</span><span>size {_n(p["quantity"], 6)}</span>'
+            f'<span>entry {_n(p["entry_price"], 4)}</span><span>now {_n(p["current_price"], 4)}</span>'
+            f'<span class="{"pos" if u > 0 else "neg" if u < 0 else ""}">unrealized <b>{_n(u, pre="$")}</b></span></div>'
+            + position_chart_svg(p.get("candles") or [], p["entry_price"], p["stop_loss"], p["take_profit"],
+                                 p["current_price"])
+            + f'<div class="sub">{E(p.get("chart_tf") or "")} candles · {E(p.get("chart_source") or "none")} '
+              f'(REAL prices) · stop {_n(p["stop_loss"], 4)} · target {_n(p["take_profit"], 4)} · opened {_t(p["opened_ts"])}</div>'
+              '</section>')
+    return f'<div class="posgrid n{min(len(panels), 2)}">{"".join(panels)}</div>'
+
+
+def _equity_panel(d: dict) -> str:
+    from app.dashboard.charts import equity_svg
+    return ('<section><h2>Account balance <span class="tag sim">SIMULATED equity</span></h2>'
+            + equity_svg(d["equity_curve"], d["start_equity"]) + '</section>')
+
+
+def render_top(d: dict) -> str:
+    return _cards(d) + _position_panels(d) + _equity_panel(d)
+
+
+def render(d: dict, demo: bool = False) -> str:
     o, sysd, fw = d["overview"], d["system"], d["forward_test"]
     safe = o["safe_state"]
     safe_html = (f'<span class="tag bad">SAFE STATE: {E(safe["reason"] or "")}</span>' if safe["halted"]
                  else '<span class="tag ok">SAFE STATE: normal</span>')
-    health_ok = sum(1 for h in sysd["integrations"] if h["status"] == "ok")
-    kpi = lambda label, val, extra="": f'<div class="kpi"><span class="muted">{E(label)}</span><b>{val}</b>{extra}</div>'
-    overview = "".join([
-        kpi("Simulated equity", _n(o["equity"], pre="$")),
-        kpi("Daily P&L", _n(o["daily_pnl"], pre="$")),
-        kpi("Total P&L", _n(o["total_pnl"], pre="$")),
-        kpi("Open positions", f'{o["open_positions"]} / {o["max_open_positions"]}'),
-        kpi("Daily loss / limit", f'{_n(o["daily_loss"], pre="$")} / {_n(o["daily_loss_limit"], pre="$")}',
-            '<span class="tag bad">LIMIT REACHED</span>' if o["daily_limit_reached"] else ""),
-        kpi("Risk per trade", _n(o["risk_per_trade"], pre="$")),
-        kpi("System health", f"{health_ok}/{len(sysd['integrations'])} integrations ok"),
-        kpi("Losses in a row today", str(o["consecutive_losses_today"]))])
     a = d["analytics"]
 
     def stats_rows(groups):
         return [{"group": k, **v} for k, v in groups.items()]
     st_cols = [("Group", "group"), ("Trades", lambda r: f'<td class="n">{r["trades"]}</td>'),
                ("Win rate", lambda r: f'<td class="n">{_n(r["win_rate"] * 100 if r["win_rate"] is not None else None, 0)}%</td>'),
-               ("Profit factor", lambda r: f'<td class="n">{_n(r["profit_factor"])}</td>'),
+               ("PF", lambda r: f'<td class="n">{_n(r["profit_factor"])}</td>'),
                ("Max DD $", lambda r: f'<td class="n">{_n(r["max_drawdown_usd"])}</td>'),
-               ("Avg winner $", lambda r: f'<td class="n">{_n(r["avg_winner_usd"])}</td>'),
-               ("Avg loser $", lambda r: f'<td class="n">{_n(r["avg_loser_usd"])}</td>'),
+               ("Avg win $", lambda r: f'<td class="n">{_n(r["avg_winner_usd"])}</td>'),
+               ("Avg loss $", lambda r: f'<td class="n">{_n(r["avg_loser_usd"])}</td>'),
                ("Expectancy $", lambda r: f'<td class="n">{_n(r["expectancy_usd"], 3)}</td>'),
                ("Net $", lambda r: f'<td class="n">{_n(r["net_pnl_usd"])}</td>')]
     analytics_rows = ([{"group": "ALL", **a["all"]}] if a["all"]["trades"] else []) + stats_rows(a["by_strategy"]) \
         + stats_rows({f"asset: {k}": v for k, v in a["by_asset_class"].items()})
-    fs = fw["stats"]
-    sections = [
-        ("Overview", '<span class="tag sim">SIMULATED</span>', f'<div class="kpis">{overview}</div>', True),
-        ("Market scanner", '<span class="tag real">REAL market data</span> <span class="tag sim">proposals only</span>',
-         _table(d["scanner"], [
-             ("Time", lambda r: f"<td>{_t(r['ts'])}</td>"), ("Ticker", "symbol"), ("Asset", "asset_class"),
-             ("Data ts", lambda r: f"<td>{_t(r['data_ts'])} <span class='muted'>{E(r['data_status'] or '')}</span></td>"),
-             ("Score", lambda r: f'<td class="n">{_n(r["score"], 1)}</td>'), ("Strategy", "strategy"),
-             ("Entry", lambda r: f'<td class="n">{_n(r["entry"], 4)}</td>'),
-             ("Stop", lambda r: f'<td class="n">{_n(r["stop"], 4)}</td>'),
-             ("Target", lambda r: f'<td class="n">{_n(r["target"], 4)}</td>'),
-             ("R:R net", lambda r: f'<td class="n">{_n(r["rr_net"])}</td>'),
-             ("Conf.", lambda r: f'<td class="n">{_n(r["confidence"])}</td>'),
-             ("Status", lambda r: f"<td>{_status_tag(r['status'])} {_status_tag(r['validation_status'])}</td>"),
-             ("Evidence / reason", lambda r: f"<td class='muted'>{E((r['reject_reason'] or json.dumps(r['missing'] or r['evidence'], default=str))[:220])}</td>")],
-             "No journaled signals yet. Live scans run during market hours / via the trading loop."), True),
-        ("Portfolio", '<span class="tag sim">SIMULATED</span>', _table(d["portfolio"], [
-            ("Symbol", "symbol"), ("Strategy", "strategy"), ("Status", lambda r: f"<td>{_status_tag(r['validation_status'])}</td>"),
-            ("Size", lambda r: f'<td class="n">{_n(r["quantity"], 6)}</td>'),
-            ("Entry", lambda r: f'<td class="n">{_n(r["entry_price"], 4)}</td>'),
-            ("Current", lambda r: f'<td class="n">{_n(r["current_price"], 4)}</td>'),
-            ("Unrealized $", lambda r: f'<td class="n">{_n(r["unrealized_pnl_usd"])}</td>'),
-            ("Stop", lambda r: f'<td class="n">{_n(r["stop_loss"], 4)}</td>'),
-            ("Target", lambda r: f'<td class="n">{_n(r["take_profit"], 4)}</td>'),
-            ("Opened", lambda r: f"<td>{_t(r['opened_ts'])}</td>")], "No open positions."), False),
-        ("Analytics", '<span class="tag sim">SIMULATED trades</span>',
-         _table(analytics_rows, st_cols, "No closed paper trades yet."), False),
-        ("Forward paper test", '<span class="tag sim">SIMULATED · internal ledger only · never Alpaca</span>',
-         f'<p>Strategies: {E(", ".join(fw["strategies"]))} · closed <b>{fs["closed_trades"]}</b> / target '
-         f'{fw["target_trades"]} · open {fs["open_trades"]} · win rate '
-         f'{_n(fs["win_rate"] * 100 if fs["win_rate"] is not None else None, 0)}% · PF {_n(fs["profit_factor"])} · '
-         f'expectancy {_n(fs["expectancy_r"], 3)} R · net {_n(fs["net_pnl_usd"], pre="$")} · max DD '
-         f'{_n(fs["max_drawdown_usd"], pre="$")}</p>' + _table(fw["recent"], [
-             ("Closed", lambda r: f"<td>{_t(r['closed_ts'])}</td>"), ("Symbol", "symbol"), ("Strategy", "strategy"),
-             ("P&L $", lambda r: f'<td class="n">{_n(r["pnl_usd"])}</td>'),
-             ("R", lambda r: f'<td class="n">{_n(r["r_multiple"])}</td>'), ("Exit", "exit_reason")],
-             "No forward-test trades yet (needs a verified positive catalyst + price confirmation + score ≥ 70)."), False),
-        ("Strategy validation", '<span class="tag real">backtests on REAL history</span>', _table(d["validation"], [
+    health_ok = sum(1 for h in sysd["integrations"] if h["status"] == "ok")
+    details = [
+        ("Signals (scanner)", f'{len(d["scanner"])} recent', _table(d["scanner"], [
+            ("Time", lambda r: f"<td>{_t(r['ts'])}</td>"), ("Ticker", "symbol"), ("Strategy", "strategy"),
+            ("Score", lambda r: f'<td class="n">{_n(r["score"], 1)}</td>'),
+            ("Entry / stop / target", lambda r: f'<td class="n">{_n(r["entry"], 4)} / {_n(r["stop"], 4)} / {_n(r["target"], 4)}</td>'),
+            ("R:R", lambda r: f'<td class="n">{_n(r["rr_net"])}</td>'),
+            ("Conf.", lambda r: f'<td class="n">{_n(r["confidence"])}</td>'),
+            ("Status", lambda r: f"<td>{_status_tag(r['status'])} {_status_tag(r['validation_status'])}</td>"),
+            ("Why", lambda r: f"<td class='muted'>{E((r['reject_reason'] or json.dumps(r['missing'] or r['evidence'], default=str))[:160])}</td>")],
+            "No journaled signals yet. Live scans run via the trading loop.")),
+        ("Analytics (simulated trades)", f'{a["all"]["trades"]} closed', _table(analytics_rows, st_cols, "No closed paper trades yet.")),
+        ("Forward-test trades", f'{fw["stats"]["closed_trades"]} closed', _table(fw["recent"], [
+            ("Closed", lambda r: f"<td>{_t(r['closed_ts'])}</td>"), ("Symbol", "symbol"), ("Strategy", "strategy"),
+            ("P&L $", lambda r: f'<td class="n">{_n(r["pnl_usd"])}</td>'),
+            ("R", lambda r: f'<td class="n">{_n(r["r_multiple"])}</td>'), ("Exit", "exit_reason")],
+            "No forward-test trades yet (needs a verified positive catalyst + price confirmation + score >= 70).")),
+        ("Strategy validation", "backtests on REAL history", _table(d["validation"], [
             ("Asset", "asset"), ("Strategy", "strategy"), ("Quant", lambda r: f"<td>{_status_tag(r['quant'])}</td>"),
-            ("Verdict", lambda r: f"<td>{_status_tag(r['verdict'])}</td>"),
             ("OOS n", lambda r: f'<td class="n">{r["oos_trades"] if r["oos_trades"] is not None else "–"}</td>'),
             ("OOS PF", lambda r: f'<td class="n">{_n(r["oos_pf"])}</td>'),
-            ("OOS exp R", lambda r: f'<td class="n">{_n(r["oos_exp_r"], 3)}</td>'),
-            ("Validated", lambda r: f"<td>{_t(r['validated_at'])}</td>"),
-            ("Reason", lambda r: f"<td class='muted'>{E(r['reason'][:140])}</td>")], "No backtest runs yet."), True),
-        ("News intelligence", '<span class="tag real">REAL news</span>', _table(d["news"], [
+            ("Reason", lambda r: f"<td class='muted'>{E(r['reason'][:120])}</td>")], "No backtest runs yet.")),
+        ("News", f'{len(d["news"])} important items (REAL)', _table(d["news"], [
             ("Published", lambda r: f"<td>{_t(r['published_ts'] or r['fetched_ts'])}</td>"),
-            ("Source", lambda r: f"<td>{E(r['source'])} <span class='muted'>T{r['source_tier']}</span></td>"),
-            ("Title", lambda r: f"<td>{E(r['title'][:120])}</td>"),
-            ("Tickers", lambda r: f"<td>{E(', '.join(r['tickers'][:4]))}</td>"),
-            ("Sentiment", lambda r: f'<td class="n">{_n(r["sentiment"])}</td>'),
-            ("Impact", lambda r: f"<td>{E(r['impact'] or '–')} {E(', '.join(c for c in r['catalysts'] if c))}</td>"),
-            ("Verified", lambda r: f"<td>{'✔' if r['verified'] else '–'}</td>")], "No news ingested yet."), True),
-        ("Risk decisions", '<span class="tag sim">SIMULATED</span>', _table(d["risk"], [
+            ("Source", "source"), ("Title", lambda r: f"<td>{E(r['title'][:110])}</td>"),
+            ("Tickers", lambda r: f"<td>{E(', '.join(r['tickers'][:3]))}</td>"),
+            ("Sent.", lambda r: f'<td class="n">{_n(r["sentiment"])}</td>'),
+            ("Impact", lambda r: f"<td>{E(r['impact'] or '–')}</td>"),
+            ("Verified", lambda r: f"<td>{'✔' if r['verified'] else '–'}</td>")], "No news ingested yet.")),
+        ("Risk decisions", f'{len(d["risk"])} recent', _table(d["risk"], [
             ("Time", lambda r: f"<td>{_t(r['ts'])}</td>"), ("Symbol", "symbol"),
             ("Approved", lambda r: f"<td>{_status_tag('ok' if r['approved'] else 'rejected')}</td>"),
             ("Risk $", lambda r: f'<td class="n">{_n(r["planned_risk_usd"])}</td>'),
-            ("R:R", lambda r: f'<td class="n">{_n(r["rr_net"])}</td>'),
-            ("Reason", lambda r: f"<td class='muted'>{E((r['reason'] or '')[:160])}</td>")], "No risk evaluations yet."), False),
-        ("System status", '<span class="tag real">REAL probes</span>',
+            ("Reason", lambda r: f"<td class='muted'>{E((r['reason'] or '')[:140])}</td>")], "No risk evaluations yet.")),
+        ("System status", f'{health_ok}/{len(sysd["integrations"])} integrations ok · {len(sysd["recent_errors"])} recent errors',
          f'<p>Last market data: {_t(sysd["last_market_data"])} · last news ingest: {_t(sysd["last_news_ingest"])} · '
-         f'active modules: {E(", ".join(k for k, v in sysd["active_modules"].items() if v))} · off: '
+         f'modules on: {E(", ".join(k for k, v in sysd["active_modules"].items() if v))} · off: '
          f'{E(", ".join(k for k, v in sysd["active_modules"].items() if not v))}</p>'
-         + _table(sysd["integrations"], [("Integration", "integration"), ("Category", "category"),
+         + _table(sysd["integrations"], [("Integration", "integration"),
                                          ("Status", lambda r: f"<td>{_status_tag(r['status'])}</td>"),
-                                         ("Latency ms", lambda r: f'<td class="n">{_n(r["latency_ms"], 0)}</td>'),
                                          ("Checked", lambda r: f"<td>{_t(r['ts'])}</td>"),
-                                         ("Detail", lambda r: f"<td class='muted'>{E((r['detail'] or '')[:90])}</td>")],
+                                         ("Detail", lambda r: f"<td class='muted'>{E((r['detail'] or '')[:80])}</td>")],
                   "No probes yet (run `python -m app.main probe`).")
-         + "<h2 style='margin-top:12px'>Missing data (last scans)</h2>"
+         + "<h3>Missing data (last scans)</h3>"
          + _table(sysd["missing_data"], [("Scanner", "scanner"), ("Symbol", "symbol"), ("Reason", "reason")], "None.")
-         + "<h2 style='margin-top:12px'>Recent errors</h2>"
+         + "<h3>Recent errors</h3>"
          + _table(sysd["recent_errors"], [("Time", lambda r: f"<td>{_t(r['ts'])}</td>"), ("Module", "module"),
-                                         ("Type", "error_type"), ("Message", "message")], "No errors."), True),
+                                         ("Message", "message")], "No errors.")),
     ]
-    body = "".join(f'<section class="{"wide" if wide else ""}"><h2>{E(t)} {tag}</h2>{c}</section>'
-                   for t, tag, c, wide in sections)
-    return (f'<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="30">'
-            f'<title>ATLAS Trading AI</title><style>{CSS}</style></head><body><header><h1>ATLAS Trading AI</h1>'
-            f'<span class="tag sim">PAPER TRADING ONLY · {E(o["mode"])} · {E(o["provider"])} · Alpaca orders '
-            f'{"ON" if o["alpaca_paper_orders_enabled"] else "OFF"}</span>{safe_html}'
-            f'<span class="muted">v{E(o["version"])} · updated {_t(d["generated_ts"])} Europe/Prague · '
-            f'trading day {E(o["trading_day"])} (New York)</span></header><main>{body}</main></body></html>')
+    det = "".join(f'<details><summary>{E(t)} <span class="muted">· {E(sub)}</span></summary>{c}</details>'
+                  for t, sub, c in details)
+    demo_html = ('<div class="demo">DEMO - throwaway copy of the database with 2 clearly marked DEMO positions built '
+                 'from real candles. Not the real ledger.</div>' if demo else "")
+    return (f'<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+            f'<title>ATLAS Trading AI</title><style>{CSS}</style></head><body>{demo_html}<header><h1>ATLAS</h1>'
+            f'<span class="tag sim">PAPER ONLY · Alpaca orders {"ON" if o["alpaca_paper_orders_enabled"] else "OFF"}</span>'
+            f'{safe_html}<span class="muted" id="upd">updated {_t(d["generated_ts"])} Prague · auto-refresh 30 s</span></header>'
+            f'<main><div id="top">{render_top(d)}</div><h2 class="dh">Details</h2>{det}</main>'
+            f'<script>{JS}</script></body></html>')
 
 
-def make_handler(settings: Settings, db_path=None):
+def make_handler(settings: Settings, db_path=None, live_prices: bool = True, demo: bool = False):
     class H(BaseHTTPRequestHandler):
         def _send(self, code, body: str, ctype: str):
             b = body.encode()
@@ -199,9 +243,14 @@ def make_handler(settings: Settings, db_path=None):
                 if path == "/healthz":
                     return self._send(200, "ok", "text/plain")
                 if path == "/api/state":
-                    return self._send(200, json.dumps(collect(settings, db_path), default=str), "application/json")
+                    return self._send(200, json.dumps(collect(settings, db_path, live_prices=live_prices), default=str),
+                                      "application/json")
+                if path == "/fragment/top":
+                    return self._send(200, render_top(collect(settings, db_path, live_prices=live_prices)),
+                                      "text/html; charset=utf-8")
                 if path == "/":
-                    return self._send(200, render(collect(settings, db_path)), "text/html; charset=utf-8")
+                    return self._send(200, render(collect(settings, db_path, live_prices=live_prices), demo),
+                                      "text/html; charset=utf-8")
                 return self._send(404, "not found", "text/plain")
             except Exception as e:   # never leak a traceback to the browser
                 return self._send(500, f"dashboard error: {type(e).__name__}", "text/plain")
@@ -211,5 +260,8 @@ def make_handler(settings: Settings, db_path=None):
     return H
 
 
-def serve(settings: Settings, host: str = "127.0.0.1", port: int = 8765, db_path=None) -> ThreadingHTTPServer:
-    return ThreadingHTTPServer((host, port), make_handler(settings, db_path))
+def serve(settings: Settings, host: str = "127.0.0.1", port: int = 8765, db_path=None,
+          live_prices: bool = True, demo: bool = False) -> ThreadingHTTPServer:
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        raise ValueError("dashboard is localhost-only")
+    return ThreadingHTTPServer((host, port), make_handler(settings, db_path, live_prices, demo))
