@@ -6,6 +6,7 @@ probes are labelled as REAL observations.
 """
 from __future__ import annotations
 
+from app.risk.leverage import risk_pct
 import json
 import sqlite3
 from datetime import datetime, timezone
@@ -91,7 +92,7 @@ def collect(settings: Settings, db_path: Path | str | None = None, now: datetime
             "open_positions": len(opens), "max_open_positions": r.max_open_positions,
             "daily_loss": round(st.daily_loss, 2), "daily_loss_limit": round(limit, 2),
             "daily_limit_reached": st.daily_loss >= limit, "consecutive_losses_today": st.consecutive_losses_today,
-            "risk_per_trade": round(st.equity * r.max_risk_per_trade_pct / 100, 2), "trading_day": st.trading_day,
+            "risk_per_trade": round(st.equity * risk_pct(settings) / 100, 2), "trading_day": st.trading_day,
             "safe_state": {"halted": safe.halted, "reason": safe.reason, "since": safe.since},
             "mode": settings.execution.mode, "provider": settings.execution.provider,
             "alpaca_paper_orders_enabled": settings.execution.alpaca_paper_orders_enabled, "version": VERSION}
