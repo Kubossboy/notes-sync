@@ -1,0 +1,60 @@
+# ATLAS Trading AI - default configuration.
+# Every value here is validated by app/config.py. Changing a risk value is an
+# explicit, logged action (the config hash is recorded at every startup).
+app:
+  name: "ATLAS Trading AI"
+  environment: "dev"
+  timezone_user: "Europe/Prague"
+  timezone_market: "America/New_York"
+
+paths:
+  database: "var/atlas.sqlite3"
+  log_dir: "logs"
+
+execution:
+  mode: "paper"            # the ONLY allowed value. Anything else fails validation.
+  provider: "internal_sim" # internal simulator; "alpaca_paper" only once credentials exist
+  leverage_enabled: false  # must stay false
+  margin_enabled: false    # must stay false
+  allow_short: false
+  commission_per_trade_usd: 0.0
+  stock_fee_bps: 0.0
+  crypto_fee_bps: 60.0     # conservative taker-fee assumption (Coinbase-like retail tier)
+  slippage_bps_stock: 5.0
+  slippage_bps_crypto: 10.0
+
+portfolio:
+  starting_equity_usd: 1000.0
+  base_currency: "USD"
+
+risk:
+  max_risk_per_trade_pct: 0.25   # % of current equity -> $2.50 at $1,000
+  max_daily_loss_pct: 1.0        # % of starting daily equity -> $10 at $1,000
+  max_open_positions: 2
+  min_reward_risk: 2.0
+  require_stop_loss: true
+  require_take_profit: true
+  allow_averaging_down: false
+  allow_martingale: false
+
+scoring:
+  min_score_to_trade: 70
+  weights:                 # initial hypotheses, NOT validated. Must sum to 1.0
+    technical: 0.25
+    momentum_volume: 0.20
+    news: 0.20
+    sentiment: 0.10
+    quant: 0.15
+    liquidity: 0.10
+
+markets:
+  stocks:
+    enabled: true
+    watchlist: ["SPY", "QQQ", "AAPL", "MSFT", "NVDA", "TSLA", "AMD", "META"]
+  crypto:
+    enabled: true
+    watchlist: ["BTC-USD", "ETH-USD", "SOL-USD"]
+
+http:
+  timeout_seconds: 10
+  user_agent: "ATLAS-Trading-AI/0.1 (paper-trading research; contact: set ATLAS_CONTACT_EMAIL)"

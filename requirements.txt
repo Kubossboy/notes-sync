@@ -1,0 +1,7 @@
+# Pinned versions verified on the ATLAS box (Python 3.13.5, Debian 13)
+pydantic==2.14.4
+pyyaml==6.0.4
+requests==2.34.2
+pandas==3.1.1
+numpy==2.5.5
+pytest==9.2.0
