@@ -136,6 +136,27 @@ risk limits. Every forward-test trade is logged in `forward_test_trades`; judge 
 .venv/bin/python -m app.main forwardtest     # stats + last trades
 ```
 
+Dashboard (Milestone 7) - local, read-only:
+
+```bash
+.venv/bin/python -m app.main dashboard            # http://127.0.0.1:8765  (JSON: /api/state)
+```
+
+Overview (simulated equity, daily/total P&L, open positions, daily loss limit, safe state, health),
+market scanner (ticker, asset class, data time, score, strategy, entry/stop/target, R:R, confidence,
+evidence or reject reason), portfolio, analytics (win rate, PF, max DD, avg winner/loser,
+expectancy, by strategy and asset class), forward paper test, strategy validation verdicts, news
+intelligence, risk decisions and system status (integrations, last updates, missing data, errors,
+active modules). SIMULATED and REAL panels are labelled.
+
+Run continuously (paper only; not started automatically):
+
+```bash
+nohup ./scripts/run_loop.sh >/dev/null 2>&1 &             # trade cycle every 60 s (INTERVAL=...), logs/loop.log
+nohup .venv/bin/python -m app.main dashboard >/dev/null 2>&1 &
+touch var/STOP                                             # stop the loop after the current cycle
+```
+
 Other commands: `python -m app.main halt <reason>` (enter SAFE STATE: no new
 simulated trades) and `python -m app.main resume --by <name>` (journaled).
 
@@ -157,7 +178,8 @@ app/
   backtest/          history.py (free historical bars, cached), engine.py (replay), validation.py (IS/OOS/WF)
   quant/             engine.py: validation verdict -> quant score component
   risk/ execution/ portfolio/   risk engine, paper simulator/trader, ledger
-  analytics/ dashboard/         (later milestones)
+  dashboard/         data.py (read-only journal view), server.py (local web dashboard)
+  analytics/         (later milestones)
 config/default.yaml  all non-secret settings
 .env.example         optional credentials (copy to .env, never commit)
 tests/               pytest suite (`-m live` = real network)

@@ -7,3 +7,4 @@ var/*
 !var/.gitkeep
 logs/*.jsonl
 logs/*.log
+logs/*.err

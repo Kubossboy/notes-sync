@@ -1,4 +1,4 @@
-# Architecture (Milestones 1-6)
+# Architecture (Milestones 1-7)
 
 ```
 CLI (app/main.py)
@@ -103,4 +103,14 @@ validation.run_validation                   IS 60 % / OOS 40 %, walk-forward 6 b
                                             diagnostic R:R>=1 run -> verdict -> backtest_runs / backtest_trades
 QuantEngine.assess (scanner._finalize)      failed -> 0 + rejected; unavailable -> None (incomplete);
                                             validated -> 0-100 + expected value (OOS expectancy) in evidence
+```
+
+## Forward test & dashboard (post-M6, Milestone 7)
+
+```
+QuantEngine.status: news_momentum (not backtestable, configured) -> forward_test (quant 50)
+RiskEngine: rule strategy_validated_or_forward_test        PaperTrader: forward_test never mirrored to Alpaca
+PaperSimulator.close_position -> forward_test_trades (append-only)
+dashboard/data.collect (SQLite mode=ro) -> server.render (HTML) | /api/state (JSON)   127.0.0.1:8765
+scripts/run_loop.sh: `trade` every 60 s until var/STOP
 ```

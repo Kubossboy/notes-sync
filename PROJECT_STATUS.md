@@ -1,9 +1,9 @@
 # PROJECT STATUS – ATLAS Trading AI
 
-_Last updated: 2026-11-24 (Europe/Prague) · version 0.6.0-m6_
+_Last updated: 2026-11-24 (Europe/Prague) · version 0.7.0-m7_
 
 ## Current development phase
-Milestone 6 – Backtesting and validation: **complete**. Next: Milestone 7 – Dashboard.
+Milestone 7 – Dashboard: **complete** (plus the news-driven forward test). Next: Milestone 8 – continuous paper trading.
 
 ## Completed modules
 - M1 foundation: config (strict, paper-only), logging + redaction, SQLite journal (append-only), safety/SAFE STATE, probes, CLI.
@@ -36,8 +36,11 @@ Milestone 6 – Backtesting and validation: **complete**. Next: Milestone 7 – 
   - Verdicts journaled in append-only `backtest_runs` / `backtest_trades`; QuantEngine feeds the quant score component
   - CLI: `backtest`, `validation`; results in docs/BACKTEST_RESULTS.md
 
+- News-driven forward test (D75-D79): `forward_test` status for news_momentum (internal ledger only, never Alpaca), score weights news 40 / sentiment 15 / quant 15 / liquidity 10 / technical 10 / momentum 10, verified catalysts required, session-aware freshness, separate `forward_test_trades` log, `forwardtest` CLI.
+- M7 dashboard: local read-only web dashboard (`dashboard`), all spec sections + forward test + validation + risk; SIMULATED vs REAL labels.
+
 ## Remaining tasks
-M7 dashboard → M8 live paper trading. Planned (Kubiqq): reweight towards news/catalyst-driven decisions (not started).
+M8: run the paper loop continuously (`scripts/run_loop.sh`), monitor errors, collect ≥ 30 forward-test trades (≥ 100 for spec §14 acceptance).
 
 ## Known bugs / limitations
 - **No strategy is validated** (stocks: all failed OOS; crypto: insufficient trades after the net R:R gate, negative in the diagnostic). So live `trade` cycles execute nothing, by design. Execution path verified with a labelled synthetic signal (M5).
@@ -59,7 +62,7 @@ News ingest (real, 2026-11-24 ~09:52): 16/16 sources ok (15 feeds + SEC), 436 it
 - Alpaca: env vars (present). SEC contact e-mail: `.env` (set). X API bearer token: missing (paid tier for search). Finnhub/NewsAPI: not used (would need sign-ups).
 
 ## Test results
-Offline: 260 passed. Live (real APIs): 35 passed (M6: real Coinbase / Alpaca IEX / Yahoo history + backtest on it) (incl. real BTC paper cycle: risk-approved entry at real ask, management on real 1m bars, kill-switch flatten; Alpaca paper read-only eligibility). 0 failed.
+Offline: 270 passed. Live (real APIs): 35 passed (M6: real Coinbase / Alpaca IEX / Yahoo history + backtest on it) (incl. real BTC paper cycle: risk-approved entry at real ask, management on real 1m bars, kill-switch flatten; Alpaca paper read-only eligibility). 0 failed.
 Live tests at the 04:00 ET pre-market open exposed a Yahoo parser gap (off-grid snapshot bar) → fixed (D63).
 
 ## Backtesting results
@@ -79,6 +82,5 @@ leverage/margin off · min score 70 · weights 25/20/20/10/15/10 · stocks 5m / 
 execution: internal_sim, Alpaca paper orders OFF, fractional stocks, min notional $5, stock flatten 5 min before close, crypto max hold 24 h ·
 news: refresh 15 min, health ≤ 60 min & ≥ 50 % sources, window 24 h, half-life 6 h, catalyst freshness 16 h.
 
-## Next development priorities (Milestone 7)
-Dashboard: portfolio, positions, signals (with missing/failed components), risk evaluations, validation verdicts, system health.
-Requested next (not started): news/catalyst-driven reweighting. This needs a backtestable news history, a validated news strategy and a changed scoring/gating policy (see report).
+## Next development priorities (Milestone 8)
+Start the continuous paper loop (Kubiqq's call), watch the dashboard, judge the news forward test after ≥ 30 trades.
