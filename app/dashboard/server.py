@@ -361,7 +361,9 @@ def _position_panels(d: dict) -> str:
             f'<h2>{E(p["symbol"])} <span class="tag sim">SIMULATED position</span> '
             f'{_status_tag(p["validation_status"])} <span class="lv-tag"></span></h2>'
             f'<div class="posline"><span>{E(p["strategy"])}</span><span>size {_n(p["quantity"], 6)}</span>'
-            f'<span>entry {_n(p["entry_price"], 4)}</span><span>now <b class="lv-now">{_n(p["current_price"], 4)}</b></span>'
+            + (f'<span><b>{p["leverage"]:g}x</b> isolated · margin {_n(p["margin_usd"], pre="$")} · liq {_n(p["liquidation_price"], 4)}</span>'
+               if (p.get("leverage") or 1) > 1 else '<span>1x (no leverage)</span>')
+            + f'<span>entry {_n(p["entry_price"], 4)}</span><span>now <b class="lv-now">{_n(p["current_price"], 4)}</b></span>'
             f'<span class="lv-u {"pos" if u > 0 else "neg" if u < 0 else ""}">unrealized <b>{_n(u, pre="$")}</b></span></div>'
             + position_chart_svg(p.get("candles") or [], p["entry_price"], p["stop_loss"], p["take_profit"],
                                  p["current_price"])

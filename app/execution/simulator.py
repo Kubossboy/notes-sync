@@ -16,6 +16,7 @@ from app.data.models import AssetClass, Candle
 from app.database.db import Database
 from app.execution.costs import CostModel, Fill
 from app.portfolio.ledger import Ledger
+from app.risk.leverage import bankrupt_price, liq_price
 from app.risk.engine import MarketQuote, Proposal, RiskDecision
 
 log = get_logger("execution")
@@ -65,6 +66,8 @@ class PaperSimulator:
                     "take_profit": p.target, "fees_usd": fee, "slippage_usd": fill.slippage_per_unit * qty,
                     "unrealized_pnl_usd": -fee, "status": "open", "entry_order_id": oid,
                     "signal_id": p.signal_id, "planned_risk_usd": d.planned_risk_usd, "initial_stop": p.stop, "initial_target": p.target,
+                    "leverage": p.leverage, "margin_usd": notional / p.leverage,
+                    "liquidation_price": liq_price(fill.price, p.leverage, self.s.execution.maintenance_margin_pct),
                     "mark_price": fill.price, "mark_ts": ts, "mfe_price": fill.price, "mae_price": fill.price,
                     "trading_day": trading_day_of(now).isoformat(), "validation_status": p.validation_status})
                 self.db.conn.execute("UPDATE order_requests SET status='filled', filled_ts=?, avg_fill_price=?, "
@@ -150,6 +153,11 @@ class PaperSimulator:
             if b.open_time < opened or (after is not None and b.open_time <= after):
                 continue
             mfe, mae = max(mfe, b.high), min(mae, b.low)
+            liq = pos.get("liquidation_price")
+            if liq and b.low <= pos["stop_loss"] and b.open <= liq:   # gapped through the stop into liquidation
+                bk = bankrupt_price(pos["entry_price"], pos["leverage"])
+                return self.close_position(pos, Fill(bk, liq, 0.0, f"ISOLATED LIQUIDATION at {liq:.6g}: margin lost"),
+                                           "liquidation", now)
             if b.low <= pos["stop_loss"]:
                 return self.close_position(pos, self.costs.stop_fill(ac, pos["stop_loss"], b.open), "stop_loss", now)
             if b.high > pos["take_profit"]:

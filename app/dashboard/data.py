@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app.risk.leverage import daily_pct
 from app.config import Settings
 from app.core.safety import SafeState
 from app.portfolio.ledger import Ledger
@@ -80,7 +81,7 @@ def collect(settings: Settings, db_path: Path | str | None = None, now: datetime
         led = Ledger(settings, db)
         st = led.state(now)
         r = settings.risk
-        limit = st.day_start_equity * r.max_daily_loss_pct / 100
+        limit = st.day_start_equity * daily_pct(settings) / 100
         safe = SafeState(db).status()
         opens = st.open_positions
         closed = _rows(db, "SELECT * FROM positions WHERE status='closed' ORDER BY closed_ts")
@@ -101,7 +102,8 @@ def collect(settings: Settings, db_path: Path | str | None = None, now: datetime
             "unrealized_pnl_usd": round(((p["mark_price"] or p["entry_price"]) - p["entry_price"]) * p["quantity"]
                                         - p["fees_usd"], 4),
             "stop_loss": p["stop_loss"], "take_profit": p["take_profit"], "opened_ts": p["opened_ts"],
-            "planned_risk_usd": p["planned_risk_usd"]} for p in opens]
+            "planned_risk_usd": p["planned_risk_usd"], "leverage": p.get("leverage") or 1,
+            "margin_usd": p.get("margin_usd"), "liquidation_price": p.get("liquidation_price")} for p in opens]
         from app.dashboard.charts import db_candles, equity_points, fetch_candles
         for p in portfolio:
             tf = "15m" if p["asset_class"] == "crypto" else "5m"

@@ -13,7 +13,8 @@ from app.database.db import Database  # noqa: E402
 def settings(tmp_path):
     return load_settings(overrides={"paths": {"database": str(tmp_path / "t.sqlite3"),
                                               "log_dir": str(tmp_path / "logs")},
-                                    "app": {"environment": "test"}})
+                                    "app": {"environment": "test"},
+                                    "execution": {"paper_leverage": 1}})
 
 
 @pytest.fixture

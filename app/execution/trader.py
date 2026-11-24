@@ -17,6 +17,7 @@ from app.execution.mirror import AlpacaMirror
 from app.shadow.engine import ShadowEngine
 from app.execution.simulator import DuplicateOrder, PaperSimulator
 from app.portfolio.ledger import Ledger
+from app.risk.leverage import daily_pct
 from app.risk.engine import MarketQuote, Proposal, RiskEngine
 
 log = get_logger("trader")
@@ -123,6 +124,19 @@ class PaperTrader:
         except Exception as e:
             self.db.log_error("execution.quote", e)
             q = None
+        from app.risk import leverage as LV
+        if LV.lev(self.s) > 1 and q is not None and p.stop and p.target and p.entry:   # D94 scalp levels
+            import dataclasses
+            from app.technical.indicators import atr, to_frame
+            try:
+                df = to_frame(self.bars15(p.symbol, now))
+                a15 = float(atr(df, 14).iloc[-1]) if len(df) >= 15 else None
+            except Exception:
+                a15 = None
+            fill = self.sim.costs.buy_fill(p.asset_class, q.price, q.bid, q.ask).price
+            if p.stop < fill < p.target:
+                st_, tg_ = LV.scalp_levels(self.s, fill, p.stop, p.target, a15)
+                p = dataclasses.replace(p, stop=st_, target=tg_, leverage=LV.lev(self.s))
         d = self.risk.evaluate(p, q, now)
         res = {"signal_id": p.signal_id, "symbol": p.symbol, "strategy": p.strategy, "approved": d.approved,
                "evaluation_id": d.evaluation_id, "reason": d.reason, "qty": d.quantity,
@@ -138,7 +152,8 @@ class PaperTrader:
             return res
         if self.mirror is not None and self.mirror.enabled:     # validated AND forward_test (D85); ledger = truth
             f = res["fill"]
-            res["alpaca"] = self.mirror.open(p.symbol, p.asset_class.value, f["quantity"], f["fill_price"], p.stop,
+            # D94: Alpaca can't do 100x -> mirror at 1x size (qty / leverage = the margin's worth)
+            res["alpaca"] = self.mirror.open(p.symbol, p.asset_class.value, f["quantity"] / p.leverage, f["fill_price"], p.stop,
                                              p.target, f["client_order_id"], f["order_id"],
                                              self.ledger.state(now).equity)
         return res
@@ -212,7 +227,7 @@ class PaperTrader:
 
 
 def summary(st, settings: Settings) -> dict:
-    limit = st.day_start_equity * settings.risk.max_daily_loss_pct / 100
+    limit = st.day_start_equity * daily_pct(settings) / 100
     return {"equity": round(st.equity, 4), "cash": round(st.cash, 4), "positions_value": round(st.positions_value, 4),
             "realized_total": round(st.realized_total, 4), "unrealized": round(st.unrealized, 4),
             "total_pnl": round(st.equity - settings.portfolio.starting_equity_usd, 4),

@@ -38,7 +38,8 @@ class Sizing:
 
 
 def size_position(costs: CostModel, settings: Settings, ac: AssetClass, fill_price: float, stop: float,
-                  target: float, equity: float, cash: float, remaining_day: float) -> Sizing:
+                  target: float, equity: float, cash: float, remaining_day: float, leverage: float = 1.0,
+                  risk_pct: float | None = None) -> Sizing:
     """Pure sizing function shared by the live risk engine and the backtester.
     Loss at the stop includes entry fee, stop slippage and exit fee; gain at target includes both fees."""
     r, ex = settings.risk, settings.execution
@@ -46,12 +47,12 @@ def size_position(costs: CostModel, settings: Settings, ac: AssetClass, fill_pri
     stop_exit = stop * (1 - costs.slip(ac))
     per_unit_loss = (fill_price - stop_exit) + fill_price * fee_b + stop_exit * fee_b
     per_unit_gain = (target - fill_price) - fill_price * fee_b - target * fee_b
-    budget = equity * r.max_risk_per_trade_pct / 100
+    budget = equity * (r.max_risk_per_trade_pct if risk_pct is None else risk_pct) / 100
     comm = 2 * ex.commission_per_trade_usd
     eff_budget = max(0.0, min(budget, remaining_day) - comm)
     qty_risk = eff_budget / per_unit_loss if per_unit_loss > 0 else 0.0
-    qty_pos = equity * r.max_position_pct_equity / 100 / fill_price
-    qty_cash = max(0.0, cash - comm) / (fill_price * (1 + fee_b))
+    qty_pos = equity * r.max_position_pct_equity / 100 * leverage / fill_price      # margin <= 50 % of equity
+    qty_cash = max(0.0, cash - comm) / (fill_price * (1 / leverage + (2 * fee_b if leverage > 1 else fee_b)))
     qty = costs.round_qty(min(qty_risk, qty_pos, qty_cash), ac)
     notional = qty * fill_price
     planned = qty * per_unit_loss + comm
@@ -75,6 +76,7 @@ class Proposal:
     expires_ts: datetime | None
     data_status: str | None
     validation_status: str | None = None     # validated | forward_test | shadow_promoted | failed | unavailable
+    leverage: float = 1.0                    # D94: > 1 only for leveraged main-ledger entries
 
     @classmethod
     def from_signal_row(cls, r) -> "Proposal":
@@ -219,7 +221,12 @@ class RiskEngine:
         dup = self.db.conn.execute("SELECT id FROM order_requests WHERE signal_id=? AND purpose='entry'",
                                    (p.signal_id,)).fetchone() if p.signal_id is not None else None
         add("no_duplicate_order_for_signal", dup is None, detail=f"existing order {dup[0]}" if dup else "")
-        daily_limit = st.day_start_equity * self.r.max_daily_loss_pct / 100
+        from app.risk import leverage as LV
+        L = p.leverage
+        daily_limit = st.day_start_equity * (LV.daily_pct(self.s) if L > 1 else self.r.max_daily_loss_pct) / 100
+        if L > 1:
+            floor = self.s.portfolio.starting_equity_usd * (1 - self.r.lev_max_drawdown_pct / 100)
+            add("leveraged_drawdown_floor", st.equity > floor, round(st.equity, 4), round(floor, 4))
         add("daily_loss_limit_not_reached", st.daily_loss < daily_limit, round(st.daily_loss, 4),
             round(daily_limit, 4), f"day {st.trading_day}")
         add("consecutive_losses_today", st.consecutive_losses_today < self.r.max_consecutive_losses_per_day,
@@ -241,7 +248,8 @@ class RiskEngine:
                 self.r.max_entry_drift_r, "R units between signal entry and expected fill")
             fee_b = self.costs.fee_bps(ac) / 1e4
             daily_rem = max(0.0, daily_limit - st.daily_loss)
-            z = size_position(self.costs, self.s, ac, fill.price, p.stop, p.target, st.equity, st.cash, daily_rem)
+            z = size_position(self.costs, self.s, ac, fill.price, p.stop, p.target, st.equity, st.cash, daily_rem,
+                              L, LV.risk_pct(self.s) if L > 1 else None)
             qty, notional, planned, budget, fees, rr = z.qty, z.notional, z.planned_risk, z.budget, z.fees, z.rr_net
             remaining_day, comm = daily_rem, 2 * self.ex.commission_per_trade_usd
             add("position_size_positive", qty > 0, qty, None, "after rounding to lot step")
@@ -250,9 +258,16 @@ class RiskEngine:
                 f"{self.r.max_risk_per_trade_pct}% of current equity {st.equity:.2f}")
             add("risk_within_remaining_daily_budget", planned <= remaining_day + 1e-9, round(planned, 4),
                 round(remaining_day, 4))
-            add("no_leverage_cash_covers_notional", notional * (1 + fee_b) + comm <= st.cash + 1e-9,
-                round(notional, 4), round(st.cash, 4))
-            min_rr = (self.s.validation.forward_test_min_reward_risk
+            if L > 1:
+                liq = LV.liq_price(fill.price, L, self.ex.maintenance_margin_pct)
+                add("stop_before_liquidation", p.stop * (1 - self.costs.slip(ac)) > liq, p.stop, round(liq, 6),
+                    f"isolated {L:g}x, mmr {self.ex.maintenance_margin_pct}%")
+                add("cash_covers_margin_and_fees", notional / L + fees + comm <= st.cash + 1e-9,
+                    round(notional / L + fees, 4), round(st.cash, 4), "max loss = margin + fees -> equity never < 0")
+            else:
+                add("no_leverage_cash_covers_notional", notional * (1 + fee_b) + comm <= st.cash + 1e-9,
+                    round(notional, 4), round(st.cash, 4))
+            min_rr = self.r.lev_min_reward_risk if L > 1 else (self.s.validation.forward_test_min_reward_risk
                       if p.validation_status == "forward_test" and p.strategy in self.s.validation.forward_test_strategies
                       else self.r.min_reward_risk)
             add("net_reward_risk", rr is not None and rr >= min_rr,

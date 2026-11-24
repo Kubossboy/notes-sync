@@ -53,12 +53,13 @@ class Ledger:
         realized = self.db.conn.execute(
             "SELECT COALESCE(SUM(realized_pnl_usd),0) FROM positions WHERE status='closed'").fetchone()[0]
         opens = self.open_positions()
-        open_cost = sum(p["quantity"] * p["entry_price"] + p["fees_usd"] for p in opens)
+        lv = lambda p: p.get("leverage") or 1.0                      # noqa: E731  (D94 isolated margin)
+        open_cost = sum(p["quantity"] * p["entry_price"] / lv(p) + p["fees_usd"] for p in opens)
         cash = self.start + realized - open_cost
         pv = unreal = 0.0
         for p in opens:
             m = marks.get(p["symbol"]) or p["mark_price"] or p["entry_price"]
-            pv += p["quantity"] * m
+            pv += p["quantity"] * p["entry_price"] / lv(p) + (m - p["entry_price"]) * p["quantity"]
             unreal += (m - p["entry_price"]) * p["quantity"] - p["fees_usd"]
         equity = cash + pv
         day_realized = self.db.conn.execute(

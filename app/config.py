@@ -74,6 +74,8 @@ class ExecutionSection(_Strict):
     # Alpaca PAPER order mirroring (paper-api.alpaca.markets only). OFF by default; the
     # internal $1,000 ledger stays authoritative either way.
     alpaca_paper_orders_enabled: bool = False
+    paper_leverage: int = Field(100, ge=1, le=100)  # D94: SIMULATED isolated leverage, internal main ledger only
+    maintenance_margin_pct: float = Field(0.5, ge=0, lt=1)
     trade_management_enabled: bool = True           # D92: tighten-only SL, reduce-only TP, early exits
 
 
@@ -100,6 +102,13 @@ class RiskSection(_Strict):
     stock_flatten_minutes_before_close: float = Field(5, ge=1)
     stock_overnight_holding: Literal[False] = False       # day trading: flat at the close
     crypto_max_hold_hours: float = Field(24, gt=0)
+    # D94 caps for leveraged paper trading (base limit x leverage, capped)
+    lev_max_risk_per_trade_pct: float = Field(25.0, gt=0, le=25.0)    # 0.25 % x 100 = 25 % ($250 on $1,000)
+    lev_max_daily_loss_pct: float = Field(50.0, gt=0, le=50.0)        # 1 % x 100 = 100 % -> capped at 50 %
+    lev_max_drawdown_pct: float = Field(50.0, gt=0, le=50.0)          # no new trades below 50 % of start equity
+    lev_min_reward_risk: float = Field(1.2, ge=1.2)                   # scalp levels, net of fees on full notional
+    lev_tp_atr: float = Field(1.25, gt=0, le=1.5)                     # TP <= fill + 1.25 x ATR14(15m)
+    lev_sl_liq_fraction: float = Field(0.6, gt=0, le=0.8)             # SL at most 60 % of the way to liquidation
 
 
 class Weights(_Strict):

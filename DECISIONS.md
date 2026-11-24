@@ -205,3 +205,20 @@ Reversible technical decisions made during development. Newest last.
 - Unchanged: all other strategies (min score 70, R:R 2.0), $2.50 risk / trade, $10 daily stop, max 2 positions,
   3 consecutive losses end the day, no leverage, no averaging. Failed strategies still never trade in main; promotion only
   via the shadow rule (D91), and promoted strategies use the normal gates (70 / 2.0).
+
+## D94 - SIMULATED 100x isolated leverage on the MAIN paper ledger (explicit user request; overrides the spec's no-leverage rule for the internal ledger only)
+- Fictional money only. `execution.paper_leverage: 100` (code default) applies to NEW main-ledger entries; the open BTC
+  position #1 stays 1x (not changed retroactively). The brokerage safety flags `leverage_enabled` / `margin_enabled`
+  stay false: nothing is borrowed anywhere, no live broker. Shadow ledger and backtests stay unlevered (comparable stats).
+- Isolated margin (long): margin = notional / 100; liquidation = entry x (1 - 1/100 + 0.5 % mmr) = entry x 0.995;
+  a liquidation exits at entry x 0.99, i.e. the loss is the whole margin plus fees. Fees (10 bps crypto) on the FULL notional.
+- Limits (base x 100, capped): risk per trade 0.25 % -> 25 % of equity ($250 at $1,000); margin per position <= 50 % of
+  equity; daily stop 1 % -> capped 50 % of day-start equity ($500); no new leveraged trades once equity <= 50 % of the
+  $1,000 start ($500); margin + entry and exit fees must fit in cash, so equity can never go negative. Max 2 positions,
+  3 losses end the day, no averaging / adding: unchanged.
+- Scalp levels for leveraged trades (never wider than the signal's): TP = min(signal TP, fill + 1.25 x ATR14(15m));
+  SL distance = min(signal SL distance, TP distance / 1.5, 60 % of the distance to liquidation = 0.3 % of price).
+  The stop (after slippage) must sit above liquidation, otherwise the trade is skipped. Min net R:R 1.2 incl. fees on
+  the full notional (replaces 2.0 / 1.5 for leveraged entries).
+- Alpaca PAPER cannot do 100x: leveraged entries are mirrored at 1x size (qty / 100, i.e. the margin's worth); exits are
+  mirrored as before.
