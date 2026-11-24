@@ -17,8 +17,8 @@ rm -rf "$OUT"
 INFO=$(.venv/bin/python -m app.main export --out "$OUT" 2>/dev/null | tail -1)
 PROJECT=$(printf '%s' "$INFO" | .venv/bin/python -c 'import json,sys;print(json.load(sys.stdin)["project"])')
 SLUGPATH=$(printf '%s' "$INFO" | .venv/bin/python -c 'import json,sys;print(json.load(sys.stdin)["path"])')
-WR="npx -y wrangler@4"
-$WR pages project list 2>/dev/null | grep -q "$PROJECT" || $WR pages project create "$PROJECT" --production-branch main >/dev/null
+export WRANGLER_CACHE_DIR="$PWD/.wrangler-cache"; WR="npx -y wrangler@4"
+$WR pages project list 2>/dev/null | grep -q "$PROJECT" || $WR pages project create "$PROJECT" --production-branch main >/dev/null 2>&1 || true
 $WR pages deploy "$OUT" --project-name "$PROJECT" --branch main --commit-dirty=true > logs/publish_wrangler.last 2>&1 \
   || { echo "publish: wrangler deploy failed (see logs/publish_wrangler.last)" >&2; exit 4; }
 URL="https://$PROJECT.pages.dev$SLUGPATH"

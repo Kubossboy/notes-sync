@@ -9,3 +9,4 @@ logs/*.jsonl
 logs/*.log
 logs/*.err
 logs/publish_wrangler.last
+.wrangler-cache/
