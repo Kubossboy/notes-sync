@@ -139,3 +139,11 @@ Reversible technical decisions made during development. Newest last.
 - Publish interval stays 5 min (~8,640 deploys / 30 days): Cloudflare's free-plan limit is 500 *builds* / month, which only counts
   Pages CI builds (Git); direct uploads via `wrangler pages deploy` create no build (Cloudflare staff, community thread 494717 /
   Discord #pages-help 2024). Retention: 100 most recent deployments + current production always kept, older ones deleted after 30 days.
+
+## D89 - Timeframe switcher on the public dashboard
+- Each open crypto position chart gets its own 1m / 5m / 15m / 1h / 4h / 1D switcher (touch-sized buttons; full-width row on
+  phones). Candles come client-side from Coinbase Exchange's public candles endpoint (granularity 60/300/900/3600/86400;
+  4h = 4 x 1h aggregated on UTC 4h boundaries), 64 bars, refreshed every 30 s; the 5 s live ticker keeps moving the last
+  candle and price dot on whichever timeframe is shown. Entry / stop / target lines are redrawn on every timeframe.
+- Choice remembered per symbol in localStorage (default 15m); `?tf=1h` preselects. Stocks keep snapshot candles, labelled.
+- The buttons only change the view - the page still has no trading controls, forms or POSTs.

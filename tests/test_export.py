@@ -31,7 +31,9 @@ def test_export_static_snapshot(settings, dash_db, tmp_path):
     site = export(settings, out, cfg["slug"], settings.db_path, live_prices=False)
     page = (site / "index.html").read_text()
     assert 'name="robots" content="noindex' in page and "READ-ONLY SNAPSHOT" in page and "state.json" in page
-    assert "/fragment/top" not in page and "<form" not in page and "<button" not in page
+    assert "/fragment/top" not in page and "<form" not in page and "method:'POST'" not in page
+    import re
+    assert all("data-tf=" in m for m in re.findall(r"<button[^>]*", page))   # only view-only timeframe buttons
     assert "X-Robots-Tag: noindex" in (out / "_headers").read_text()
     assert "Disallow: /" in (out / "robots.txt").read_text()
     assert "Not found" in (out / "index.html").read_text()      # root reveals nothing
@@ -52,3 +54,10 @@ def test_static_page_has_live_price_layer(settings, dash_db, tmp_path):
     svg = position_chart_svg([(t + timedelta(minutes=15 * i), 100, 101, 99, 100.5) for i in range(5)], 100, 98, 105, 100.5)
     assert 'data-lo="' in svg and 'class="lcw"' in svg and 'class="lcb"' in svg and 'class="mk"' in svg
     assert svg.count('class="lcw"') == 1                              # only the last candle is live-updated
+
+
+def test_static_page_has_timeframe_switcher(settings, dash_db, tmp_path):
+    page = (export(settings, tmp_path / "s", "slug", settings.db_path, live_prices=False) / "index.html").read_text()
+    for s in ("/candles?granularity=", "'1m': [60, 1]", "'4h': [3600, 4]", "'1D': [86400, 1]", "TF_DEFAULT = '15m'",
+              "localStorage", "snapshot candles only"):
+        assert s in page, s
