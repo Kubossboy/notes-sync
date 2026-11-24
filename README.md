@@ -9,7 +9,11 @@ market-intelligence and **paper-trading-only** platform for US stocks and crypto
 > database constraints (`execution_mode` must equal `'paper'`). Nothing here can
 > place a real-money order.
 
-Current phase: **Milestone 5 – Risk engine and paper execution** (complete). See `PROJECT_STATUS.md`.
+Current phase: **Milestone 7 – dashboard, forward paper test, Alpaca PAPER mirror**. See `PROJECT_STATUS.md`.
+
+**New here / using another AI?** Read [`AGENTS.md`](AGENTS.md) (rules for any coding AI), [`START_CZ.md`](START_CZ.md) (Czech quick start)
+and [`docs/CHATGPT_PROMPT.md`](docs/CHATGPT_PROMPT.md). Cross-platform launchers: `./start.sh <cmd>` (Linux/macOS), `start.bat <cmd>` (Windows),
+`make <cmd>`; commands: `setup test status probe trade loop dashboard stop kill resume`.
 
 ## Quick start
 

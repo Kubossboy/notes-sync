@@ -111,3 +111,10 @@ Reversible technical decisions made during development. Newest last.
 - Whole-share stocks -> bracket order; fractional stocks and crypto -> plain market buy (brackets can't carry them), exit mirrored when the
   ledger closes (open legs cancelled, then DELETE position; 404 = already flat). Untradable / non-fractionable -> `alpaca_mirror_skipped`.
 - The internal ledger is the source of truth; Alpaca errors are journaled (`alpaca_mirror_failed`) and never alter the internal trade.
+
+## D86 - AI-agnostic, cross-platform hand-off
+- `AGENTS.md` is the single instruction file for any coding AI; `CLAUDE.md` and `.github/copilot-instructions.md` are short
+  pointer copies (not symlinks - symlinks break on Windows checkouts). `START_CZ.md` = Czech quick start for the owner;
+  `docs/CHATGPT_PROMPT.md` states honestly that a chat sandbox can't run the 24/7 loop.
+- Launchers `start.sh` / `start.ps1` / `start.bat` / `Makefile`; `scripts/run_loop.py` is the cross-platform loop (same
+  STOP-file/pid semantics as run_loop.sh). `tzdata` is added for Windows (zoneinfo). `.gitattributes` pins line endings.
