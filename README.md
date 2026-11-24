@@ -9,7 +9,7 @@ market-intelligence and **paper-trading-only** platform for US stocks and crypto
 > database constraints (`execution_mode` must equal `'paper'`). Nothing here can
 > place a real-money order.
 
-Current phase: **Milestone 1 – Foundation** (complete). See `PROJECT_STATUS.md`.
+Current phase: **Milestone 2 – Market data** (complete). See `PROJECT_STATUS.md`.
 
 ## Quick start
 
@@ -21,6 +21,21 @@ cd /workspace/atlas-trading-ai
 .venv/bin/python -m app.main status  # config, risk limits, safe state, last probes
 ./scripts/test.sh                  # offline tests, then live-network tests
 ```
+
+Market data (Milestone 2):
+
+```bash
+.venv/bin/python -m app.main candles BTC-USD --tf 5m   # fetch, validate, label, store
+.venv/bin/python -m app.main candles AAPL --tf 1h
+.venv/bin/python -m app.main quote ETH-USD             # bid/ask from every source + consensus
+.venv/bin/python -m app.main collect                   # whole watchlist (config/default.yaml)
+.venv/bin/python -m app.main reliability --rounds 3    # success rate + latency per source
+```
+
+Every series is labelled `live` / `delayed` / `cached` / `unavailable`, the
+still-forming bar is flagged `FORMING`, and only `live`, non-stale, valid data
+counts as *tradable*. Invalid data or a total data outage puts ATLAS into SAFE
+STATE (`status` shows the reason; `resume --by <name>` clears it).
 
 Other commands: `python -m app.main halt <reason>` (enter SAFE STATE: no new
 simulated trades) and `python -m app.main resume --by <name>` (journaled).
@@ -34,7 +49,9 @@ app/
   core/              bootstrap, logging (JSON + redaction), safety/safe state, env inspection
   database/          SQLite layer + SQL migrations (append-only audit tables)
   integrations/      data-source registry + health probes
-  data/ scanners/ technical/ fundamentals/ intelligence/ sentiment/
+  data/              market data engine: models, providers (yahoo, coinbase, kraken, binance),
+                     validation, freshness labels, cross-checks, NYSE calendar, reliability
+  scanners/ technical/ fundamentals/ intelligence/ sentiment/
   quant/ risk/ execution/ portfolio/ analytics/ dashboard/   (later milestones)
 config/default.yaml  all non-secret settings
 .env.example         optional credentials (copy to .env, never commit)

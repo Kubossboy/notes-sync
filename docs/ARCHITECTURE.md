@@ -1,4 +1,4 @@
-# Architecture (Milestone 1)
+# Architecture (Milestones 1-2)
 
 ```
 CLI (app/main.py)
@@ -23,3 +23,15 @@ Safety layers (defence in depth):
 3. DB `CHECK (execution_mode = 'paper')`, unique `client_order_id`,
    mandatory `stop_loss`/`take_profit` on positions.
 4. SAFE STATE stops new simulated trades on data/DB/integration failures.
+
+## Market data engine (Milestone 2)
+
+```
+providers (yahoo | coinbase | kraken | binance)    raw JSON -> Candle / Quote (UTC, normalized)
+   └─ BaseProvider._get_json: URL guard, timeout, retries, rate limit
+validation.validate_candles   issues (reject + SAFE STATE) / warnings (gaps, spikes, nulls)
+validation.label_freshness    live | delayed | cached | unavailable, stale, market_open
+crosscheck.cross_check        median consensus, outliers, divergent
+engine.MarketDataEngine       priority + fallback, cache, persistence, safe-state policy
+   tables: market_observations (kind=candle|quote), crosscheck_results (append-only)
+```

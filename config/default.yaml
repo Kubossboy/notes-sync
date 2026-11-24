@@ -55,6 +55,20 @@ markets:
     enabled: true
     watchlist: ["BTC-USD", "ETH-USD", "SOL-USD"]
 
+data:
+  stock_sources: ["yahoo"]
+  crypto_sources: ["coinbase", "kraken", "binance"]   # priority order; all used for cross-checks
+  include_prepost: true
+  live_max_age_bars: 2.0
+  live_grace_seconds: 60
+  stale_after_bars: 5.0
+  crosscheck_tolerance_bps_crypto: 50   # includes USDT/USD basis for Binance
+  crosscheck_tolerance_bps_stock: 100
+  crosscheck_halt_bps: 300
+  max_bar_change_pct: 20
+  min_sources_crypto: 2
+  halt_on_invalid_data: true
+
 http:
   timeout_seconds: 10
   user_agent: "ATLAS-Trading-AI/0.1 (paper-trading research; contact: set ATLAS_CONTACT_EMAIL)"

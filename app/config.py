@@ -120,6 +120,32 @@ class MarketsSection(_Strict):
     crypto: MarketList = MarketList()
 
 
+class DataSection(_Strict):
+    stock_sources: list[Literal["yahoo"]] = ["yahoo"]
+    crypto_sources: list[Literal["coinbase", "kraken", "binance"]] = ["coinbase", "kraken", "binance"]
+    include_prepost: bool = True
+    live_max_age_bars: float = Field(2.0, gt=0)      # last complete bar closed <= N bars ago -> live
+    live_grace_seconds: float = Field(60, ge=0)
+    stale_after_bars: float = Field(5.0, gt=0)       # older than N bars while market open -> stale
+    crosscheck_tolerance_bps_crypto: float = Field(50, gt=0)
+    crosscheck_tolerance_bps_stock: float = Field(100, gt=0)
+    crosscheck_halt_bps: float = Field(300, gt=0)    # sources disagree this much -> SAFE STATE
+    max_bar_change_pct: float = Field(20, gt=0)      # single-bar move above this -> warning
+    min_sources_crypto: int = Field(2, ge=1)         # consensus needs this many agreeing sources
+    halt_on_invalid_data: Literal[True] = True       # spec section 15: invalid data -> safe state
+
+    @model_validator(mode="after")
+    def _check(self) -> "DataSection":
+        if not self.stock_sources or not self.crypto_sources:
+            raise ValueError("at least one stock and one crypto source required")
+        if self.stale_after_bars < self.live_max_age_bars:
+            raise ValueError("stale_after_bars must be >= live_max_age_bars")
+        if self.crosscheck_halt_bps <= max(self.crosscheck_tolerance_bps_crypto,
+                                           self.crosscheck_tolerance_bps_stock):
+            raise ValueError("crosscheck_halt_bps must exceed the tolerances")
+        return self
+
+
 class HttpSection(_Strict):
     timeout_seconds: float = Field(10, gt=0, le=60)
     user_agent: str = "ATLAS-Trading-AI/0.1"
@@ -172,6 +198,7 @@ class Settings(_Strict):
     risk: RiskSection = RiskSection()
     scoring: ScoringSection = ScoringSection()
     markets: MarketsSection = MarketsSection()
+    data: DataSection = DataSection()
     http: HttpSection = HttpSection()
 
     def config_hash(self) -> str:

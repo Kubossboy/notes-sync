@@ -5,6 +5,10 @@ Usage:  python -m app.main <command>
   env         inspect the host environment (JSON)
   probe       check every free data source / integration and store results
   status      show configuration, safe state, credentials and last probe results
+  candles SYM  fetch, validate and store candles (--tf 5m --limit 50)
+  quote SYM    cross-checked quote from every source
+  collect      candles + quotes for the whole watchlist (or --symbols ...)
+  reliability  repeated fetches per source: success rate and latency
   halt REASON put the system into SAFE STATE (no new simulated trades)
   resume      clear SAFE STATE (explicit human action, journaled)
 """
@@ -55,6 +59,12 @@ def main(argv: list[str] | None = None) -> int:
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("init"); sub.add_parser("env"); sub.add_parser("status")
     pr = sub.add_parser("probe"); pr.add_argument("--only", nargs="*")
+    c = sub.add_parser("candles"); c.add_argument("symbol"); c.add_argument("--tf", default="5m")
+    c.add_argument("--limit", type=int, default=50)
+    q = sub.add_parser("quote"); q.add_argument("symbol")
+    co = sub.add_parser("collect"); co.add_argument("--symbols", nargs="*"); co.add_argument("--tf", default="5m")
+    rl = sub.add_parser("reliability"); rl.add_argument("--symbols", nargs="*")
+    rl.add_argument("--rounds", type=int, default=3); rl.add_argument("--tf", default="5m")
     h = sub.add_parser("halt"); h.add_argument("reason", nargs="+")
     r = sub.add_parser("resume"); r.add_argument("--by", default="operator"); r.add_argument("--note", default="")
     a = p.parse_args(argv)
@@ -78,6 +88,40 @@ def main(argv: list[str] | None = None) -> int:
             print(f"\n{ok}/{len(res)} integrations ok")
             return 1 if essential_down and len(essential_down) == sum(
                 x.category.startswith("market_data") for x in res) else 0
+        elif a.cmd in ("candles", "quote", "collect", "reliability"):
+            from app.data.engine import MarketDataEngine
+            eng = MarketDataEngine(ctx.settings, ctx.db, ctx.safe_state)
+            wl = a.symbols if getattr(a, "symbols", None) else (
+                ctx.settings.markets.stocks.watchlist + ctx.settings.markets.crypto.watchlist)
+            if a.cmd == "candles":
+                r = eng.get_candles(a.symbol, a.tf, a.limit)
+                s = r.series
+                print(f"{s.symbol} {s.timeframe} source={s.source} status={s.status.value} "
+                      f"tradable={s.tradable} stale={s.stale} market_open={s.market_open} age_s={s.age_seconds}")
+                for k in s.candles[-10:]:
+                    print(f"  {k.open_time.isoformat()} o={k.open} h={k.high} l={k.low} c={k.close} "
+                          f"v={k.volume:.4f} {'COMPLETE' if k.is_complete else 'FORMING'} {k.session or ''}")
+                if r.crosscheck:
+                    print(f"cross-check: {r.crosscheck.verdict} dev_bps={r.crosscheck.deviations_bps}")
+                for w in s.warnings:
+                    print(f"warning: {w}")
+                for at in r.attempts:
+                    if not at.ok:
+                        print(f"failed: {at.source} ({at.kind}) {at.error}")
+            elif a.cmd == "quote":
+                cc, quotes, _ = eng.get_quote_consensus(a.symbol)
+                for qq in quotes:
+                    sp = f"{qq.spread_bps:.2f}bps" if qq.spread_bps is not None else "-"
+                    print(f"  {qq.source:9} {qq.price} bid={qq.bid} ask={qq.ask} spread={sp} "
+                          f"{qq.quote_currency} ts={qq.source_ts}")
+                print(f"consensus={cc.consensus} verdict={cc.verdict} dev_bps={cc.deviations_bps}")
+            elif a.cmd == "collect":
+                print(json.dumps(eng.collect(wl, a.tf), indent=1, default=str))
+            else:
+                from app.data.reliability import reliability_check
+                print(json.dumps(reliability_check(eng, wl, a.tf, a.rounds), indent=1))
+            st = ctx.safe_state.status()
+            print(f"SAFE STATE: {'HALTED - ' + st.reason if st.halted else 'normal'}")
         elif a.cmd == "status":
             print(json.dumps(cmd_status(ctx), indent=2, default=str))
         elif a.cmd == "halt":
