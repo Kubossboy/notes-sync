@@ -18,6 +18,7 @@ from app.database.db import Database, utcnow
 from app.intelligence import catalysts as CAT
 from app.intelligence.feeds import RawItem, fetch_feed
 from app.intelligence.sec import FORM_MAP, ITEM_MAP, UNEXPECTED_ITEMS, Filing, SecClient
+from app.intelligence.finbert import finbert_score
 from app.intelligence.sentiment_lexicon import lexicon_sentiment
 from app.intelligence.sources import FEEDS, TIER_CONFIDENCE, FeedSource
 from app.intelligence.tagging import TickerTagger
@@ -28,7 +29,7 @@ log = get_logger("news")
 
 # Bump when tagging / catalyst / sentiment rules change: items are then re-analysed
 # (new rows; the content hash includes the version) and context reads only this version.
-ANALYZER_VERSION = 3
+ANALYZER_VERSION = 4
 
 
 def event_hash(source: str, title: str, url: str | None) -> str:
@@ -56,6 +57,7 @@ class Event:
     category: str | None = None
     external_id: str | None = None
     hash: str = ""
+    finbert: float | None = None
 
 
 class NewsEngine:
@@ -87,8 +89,18 @@ class NewsEngine:
             self._tagger = TickerTagger(self.stocks, self.cryptos, names)
         return self._tagger
 
+    def _blend_sentiment(self, existing: float, text: str) -> tuple[float, float | None]:
+        """Blend 0.6 FinBERT + 0.4 existing when the model is on and loads; else existing."""
+        if not self.cfg.finbert_enabled:
+            return existing, None
+        fb = finbert_score(text)
+        if fb is None:
+            return existing, None
+        return 0.6 * fb + 0.4 * existing, fb
+
     # ------------------------------------------------------------ analysis
     def analyze(self, raw: RawItem, src: FeedSource, now: datetime) -> Event:
+
         text = f"{raw.title}. {raw.summary}"
         tags = self.tagger.tag_doc(raw.title, raw.summary)
         cats, unexpected = CAT.detect(text)
@@ -97,9 +109,10 @@ class NewsEngine:
         lex, _ = lexicon_sentiment(text)
         direction = CAT.net_direction(cats)
         if src.default_category == "exchange":     # status-page prose: lexicon is noise, rules only
-            sentiment = direction
+            existing = direction
         else:
-            sentiment = 0.6 * direction + 0.4 * lex if any(c.direction for c in cats) else lex
+            existing = 0.6 * direction + 0.4 * lex if any(c.direction for c in cats) else lex
+        sentiment, fb = self._blend_sentiment(existing, text)
         tq, flags = time_quality(raw.published, now)
         own = [v for k, v in tags.items() if k not in ("MACRO", "CRYPTO_MARKET")]
         tag_conf = max(own) if own else (max(tags.values()) if tags else 1.0)
@@ -108,7 +121,7 @@ class NewsEngine:
         return Event(src.name, src.tier, src.scope, raw.title, raw.url, raw.published, raw.summary, tags, cats,
                      unexpected, lex, round(max(-1, min(1, sentiment)), 4), round(direction, 3),
                      CAT.max_impact(cats), conf, flags, category, raw.guid,
-                     event_hash(src.name, raw.title, raw.url))
+                     event_hash(src.name, raw.title, raw.url), fb)
 
     def filing_event(self, f: Filing, now: datetime, insider: list[dict] | None = None) -> Event:
         cats, unexpected = [], False
@@ -136,11 +149,12 @@ class NewsEngine:
             labels.append(f"buys ${buys:,.0f} sells ${sells:,.0f}")
         title = f"{f.ticker} {f.form}: {f.description}" + (f" [{'; '.join(labels)}]" if labels else "")
         direction = CAT.net_direction(cats)
+        sentiment, fb = self._blend_sentiment(direction, title)
         tq, flags = time_quality(f.accepted, now, max_age_h=24 * self.cfg.filings_lookback_days)
         return Event("sec_edgar", 1, "stock", title, f.url, f.accepted, "", {f.ticker: 1.0}, cats, unexpected,
-                     0.0, direction, round(direction, 3), CAT.max_impact(cats),
+                     0.0, round(max(-1, min(1, sentiment)), 4), round(direction, 3), CAT.max_impact(cats),
                      round(TIER_CONFIDENCE[1] * tq, 3), flags, cats[0].category if cats else f.form,
-                     f.accession, event_hash("sec_edgar", f.accession, f.url))
+                     f.accession, event_hash("sec_edgar", f.accession, f.url), fb)
 
     # ------------------------------------------------------------ persistence
     def _recent_for_clustering(self, now: datetime) -> list[dict]:
@@ -184,10 +198,12 @@ class NewsEngine:
             for t in ev.tags:
                 if t in ("MACRO", "CRYPTO_MARKET"):
                     continue
+                method = "lexicon+catalyst_rules+finbert" if ev.finbert is not None else "lexicon+catalyst_rules"
                 self.db.insert("sentiment_results", {
-                    "ts": now.isoformat(), "symbol": t, "source": ev.source, "method": "lexicon+catalyst_rules",
+                    "ts": now.isoformat(), "symbol": t, "source": ev.source, "method": method,
                     "score": ev.sentiment, "confidence": ev.confidence, "news_event_id": nid,
                     "details_json": json.dumps({"lexicon": ev.lexicon, "direction": ev.direction,
+                                                "finbert": ev.finbert,
                                                 "catalysts": [c.category for c in ev.catalysts]})})
         recent.append({"id": nid, "title": ev.title, "source": ev.source,
                        "published_ts": ev.published.isoformat() if ev.published else None, "story_id": story})

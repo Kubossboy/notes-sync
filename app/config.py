@@ -214,6 +214,7 @@ class NewsSection(_Strict):
     min_tag_confidence: float = Field(0.6, gt=0, le=1)  # summary-only mentions (0.45) don't count
     no_news_score: float = Field(40, ge=0, le=100)    # verified "no catalyst" is weaker than neutral
     halt_if_all_sources_fail: Literal[True] = True
+    finbert_enabled: bool = True                      # local ProsusAI/finbert; silent fallback to lexicon+rules
 
 
 class ValidationSection(_Strict):

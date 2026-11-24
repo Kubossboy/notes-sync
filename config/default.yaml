@@ -132,6 +132,7 @@ news:
   min_tag_confidence: 0.6
   no_news_score: 40
   halt_if_all_sources_fail: true
+  finbert_enabled: true          # local CPU FinBERT (ProsusAI/finbert); falls back to lexicon+rules if unloadable
 
 # Milestone 6: backtest / out-of-sample / walk-forward validation feeding the quant score component.
 validation:
