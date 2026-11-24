@@ -75,6 +75,16 @@ def main(argv: list[str] | None = None) -> int:
     nw.add_argument("symbol", nargs="?")
     nw.add_argument("--limit", type=int, default=15)
     sc.add_argument("--no-news", action="store_true", help="scan without the news engine")
+    tr = sub.add_parser("trade", help="one paper-trading cycle: manage -> scan -> risk -> simulate")
+    tr.add_argument("--no-scan", action="store_true", help="only manage open positions + snapshot")
+    tr.add_argument("--no-news", action="store_true")
+    tr.add_argument("--json", action="store_true")
+    sub.add_parser("portfolio", help="equity, cash, P&L, daily loss limit, open positions")
+    ps = sub.add_parser("positions"); ps.add_argument("--all", action="store_true"); ps.add_argument("--limit", type=int, default=20)
+    od = sub.add_parser("orders"); od.add_argument("--limit", type=int, default=20)
+    rk = sub.add_parser("risk", help="recent risk evaluations with failed checks"); rk.add_argument("--limit", type=int, default=10)
+    ks = sub.add_parser("kill", help="KILL SWITCH: SAFE STATE (+ optionally flatten all paper positions)")
+    ks.add_argument("reason", nargs="+"); ks.add_argument("--flatten", action="store_true")
     sg = sub.add_parser("signals"); sg.add_argument("--limit", type=int, default=20)
     h = sub.add_parser("halt"); h.add_argument("reason", nargs="+")
     r = sub.add_parser("resume"); r.add_argument("--by", default="operator"); r.add_argument("--note", default="")
@@ -169,6 +179,70 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"  {r['published_ts'] or '?':25} {r['source']:24} t{r['source_tier']} "
                           f"{'V' if r['verified'] else '-'} s={r['sentiment']:+.2f} {r['impact'] or '-':6} "
                           f"{(r['tickers'] or '').strip(','):20} {r['title'][:90]}")
+        elif a.cmd in ("trade", "kill"):
+            from app.data.engine import MarketDataEngine
+            from app.execution.alpaca_paper import AlpacaPaperBroker
+            from app.execution.trader import PaperTrader
+            from app.scanners.scanner import Scanner
+            eng = MarketDataEngine(ctx.settings, ctx.db, ctx.safe_state, secrets=ctx.secrets)
+            news = None
+            if a.cmd == "trade" and not a.no_news and ctx.settings.news.enabled:
+                from app.intelligence.engine import NewsEngine
+                news = NewsEngine(ctx.settings, ctx.db, ctx.secrets, ctx.safe_state)
+            trader = PaperTrader(ctx.settings, ctx.db, ctx.safe_state, eng, Scanner(ctx.settings, eng, news),
+                                 AlpacaPaperBroker(ctx.settings, ctx.secrets))
+            if a.cmd == "kill":
+                print(json.dumps(trader.kill(" ".join(a.reason), a.flatten), indent=1, default=str))
+            else:
+                rep = trader.run_once(scan=not a.no_scan)
+                if a.json:
+                    print(json.dumps(rep, indent=1, default=str))
+                else:
+                    for m in rep["managed"]:
+                        print(f"  manage {m}")
+                    for sc_ in rep["scans"]:
+                        print(f"  scan {sc_['scanner']} run={sc_['run_id']} signals={sc_['signals']}")
+                    for e in rep["executions"]:
+                        print(f"  {'EXECUTED' if e['approved'] else 'REJECTED'} {e['symbol']} {e['strategy']} "
+                              f"qty={e['qty']} risk=${e['planned_risk_usd']:.2f} rr_net={e['rr_net']} "
+                              + (f"fill={e['fill']['fill_price']:.6g}" if e.get('fill') else f"reason={e['reason']}"))
+                    if not rep["executions"]:
+                        print("  no executable signals (only complete signals with score >= "
+                              f"{ctx.settings.scoring.min_score_to_trade} reach the risk engine)")
+                    print("  portfolio " + json.dumps(rep["portfolio"]))
+            st = ctx.safe_state.status()
+            print(f"SAFE STATE: {'HALTED - ' + st.reason if st.halted else 'normal'}")
+        elif a.cmd == "portfolio":
+            from app.execution.trader import summary
+            from app.portfolio.ledger import Ledger
+            led = Ledger(ctx.settings, ctx.db)
+            st = led.state()
+            print(json.dumps(summary(st, ctx.settings), indent=1))
+            for p_ in st.open_positions:
+                print(f"  OPEN #{p_['id']} {p_['symbol']} qty={p_['quantity']} entry={p_['entry_price']:.6g} "
+                      f"mark={p_['mark_price']:.6g} stop={p_['stop_loss']:.6g} target={p_['take_profit']:.6g} "
+                      f"unrealized=${p_['unrealized_pnl_usd']:.4f} opened={p_['opened_ts']}")
+            print("assumptions: internal simulator; fills at bid/ask (or last ± assumed half-spread) ± slippage; "
+                  f"fees crypto {ctx.settings.execution.crypto_fee_bps} bps, stocks {ctx.settings.execution.stock_fee_bps} bps; "
+                  "stop gaps filled at bar open; stop assumed before target in the same bar")
+        elif a.cmd == "positions":
+            where = "" if a.all else "WHERE status='open'"
+            for r in ctx.db.conn.execute(f"SELECT id, symbol, strategy, status, quantity, entry_price, exit_price, "
+                                         f"stop_loss, take_profit, realized_pnl_usd, unrealized_pnl_usd, r_multiple, "
+                                         f"exit_reason, opened_ts, closed_ts FROM positions {where} "
+                                         f"ORDER BY id DESC LIMIT ?", (a.limit,)):
+                print(dict(r))
+        elif a.cmd == "orders":
+            for r in ctx.db.conn.execute("SELECT o.id, o.ts, o.client_order_id, o.symbol, o.side, o.purpose, "
+                                         "o.order_type, o.quantity, o.status, o.avg_fill_price, f.fee_usd, "
+                                         "f.slippage_usd, o.reason FROM order_requests o LEFT JOIN simulated_fills f "
+                                         "ON f.order_id=o.id ORDER BY o.id DESC LIMIT ?", (a.limit,)):
+                print(dict(r))
+        elif a.cmd == "risk":
+            for r in ctx.db.conn.execute("SELECT ts, evaluation_id, symbol, approved, quantity, planned_risk_usd, "
+                                         "risk_budget_usd, rr_net, equity_usd, reason FROM risk_evaluations "
+                                         "ORDER BY id DESC LIMIT ?", (a.limit,)):
+                print(dict(r))
         elif a.cmd == "signals":
             rows = ctx.db.conn.execute(
                 "SELECT s.id, s.ts, s.symbol, s.strategy, s.status, s.entry_price, s.stop_loss, s.take_profit, "

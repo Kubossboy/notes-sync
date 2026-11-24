@@ -18,7 +18,7 @@ class YahooProvider(BaseProvider):
     name = "yahoo"
     asset_class = AssetClass.STOCK
     BASE = "https://query1.finance.yahoo.com/v8/finance/chart"
-    INTERVAL = {"1m": ("1m", "1d"), "5m": ("5m", "5d"), "15m": ("15m", "5d"),
+    INTERVAL = {"1m": ("1m", "5d"), "5m": ("5m", "5d"), "15m": ("15m", "5d"),
                 "1h": ("60m", "1mo"), "1d": ("1d", "1y")}
     min_interval_s = 0.5
 
@@ -76,6 +76,16 @@ class YahooProvider(BaseProvider):
             if timeframe == "1d":
                 complete = ot.date() < now.date() or session_at(now) in ("post", "closed")
             o, h, l, c = (round(fnum(v, k, self.name), 6) for v, k in zip(vals, ("open", "high", "low", "close")))
+            prev = out[-1] if out else None
+            if (not on_grid and prev is not None and timeframe != "1d"
+                    and prev.open_time.timestamp() % grid == 0 and t < prev.open_time.timestamp() + step):
+                # off-grid "current" snapshot inside the previous bar's interval (seen at the 04:00 ET
+                # pre-market open): merge it into that bar, which is then still forming
+                out[-1] = Candle(symbol, AssetClass.STOCK, self.name, timeframe, prev.open_time, prev.open,
+                                 max(prev.high, h), min(prev.low, l), c,
+                                 prev.volume + fnum(vol or 0, "volume", self.name),
+                                 is_complete=False, session=prev.session)
+                continue
             out.append(Candle(symbol, AssetClass.STOCK, self.name, timeframe, ot,
                               open=o, high=h, low=l, close=c,
                               volume=fnum(vol or 0, "volume", self.name), is_complete=complete,

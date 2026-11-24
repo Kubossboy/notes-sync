@@ -9,7 +9,7 @@ market-intelligence and **paper-trading-only** platform for US stocks and crypto
 > database constraints (`execution_mode` must equal `'paper'`). Nothing here can
 > place a real-money order.
 
-Current phase: **Milestone 4 – Intelligence** (complete). See `PROJECT_STATUS.md`.
+Current phase: **Milestone 5 – Risk engine and paper execution** (complete). See `PROJECT_STATUS.md`.
 
 ## Quick start
 
@@ -70,6 +70,37 @@ source (SEC, Fed, FDA, BLS, CFTC, exchange status pages) or from ≥ 2
 independent outlets. News and sentiment now feed the score (news 20 %, sentiment
 10 %); a verified high-impact negative catalyst vetoes longs. Quant validation
 (M6) is still missing, so signals stay `incomplete` (max 85).
+
+Risk engine & paper execution (Milestone 5):
+
+```bash
+.venv/bin/python -m app.main trade               # one cycle: manage open positions -> scan -> risk -> simulated fills -> equity snapshot
+.venv/bin/python -m app.main trade --no-scan     # only manage stops/targets/time exits + mark-to-market
+.venv/bin/python -m app.main portfolio           # equity, cash, total/daily P&L, daily loss limit, open positions
+.venv/bin/python -m app.main positions --all     # trade history (entry, exit, P&L, R multiple, exit reason)
+.venv/bin/python -m app.main orders              # order requests + fills (fees, slippage)
+.venv/bin/python -m app.main risk                # risk evaluations and the rules that failed
+.venv/bin/python -m app.main kill "reason" --flatten   # KILL SWITCH: SAFE STATE + close all paper positions
+```
+
+ATLAS keeps its **own $1,000 ledger** (internal simulator, authoritative). Every
+trade is sized so the loss at the stop *including fees, spread and slippage* is
+≤ 0.25 % of current equity ($2.50), notional ≤ 50 % of equity and ≤ cash (no
+leverage). New entries stop at the 1 % daily loss limit ($10 of the day-start
+equity), after 3 consecutive losses in a day, for 60 min in a symbol after a
+loss, and whenever SAFE STATE is active. Only **complete** signals with score ≥ 70
+reach the risk engine - until quant validation (M6) exists every signal is
+`incomplete`, so **no paper trades happen yet by design**.
+
+Simulation assumptions (also stored on every fill): market orders fill at the
+ask/bid (or last ± 2 bps assumed half-spread) ± slippage (5 bps stocks / 10 bps
+crypto); fees 10 bps crypto, 0 stocks; stops fill at min(stop, bar open) − slippage
+(gaps hurt); targets fill only if price trades *above* the target; stop wins if
+both are hit in one bar; stocks are flattened 5 min before the close; crypto max
+hold 24 h. Real fills can be worse (partial fills, latency, queue position).
+
+Alpaca **paper** order mirroring exists but is **off** (`execution.alpaca_paper_orders_enabled: false`);
+read-only eligibility check: NVDA/AAPL/SPY/TSLA and BTC/ETH/SOL are tradable on the paper account.
 
 Other commands: `python -m app.main halt <reason>` (enter SAFE STATE: no new
 simulated trades) and `python -m app.main resume --by <name>` (journaled).

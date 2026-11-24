@@ -63,3 +63,18 @@ def session_at(ts: datetime) -> str:
 
 def regular_session_open(ts: datetime) -> bool:
     return session_at(ts) == "regular"
+
+
+def regular_close_at(ts: datetime) -> datetime | None:
+    """Regular-session close (aware UTC) for the ET trading day of `ts`; None if not a trading day."""
+    from datetime import timezone
+    d = ts.astimezone(ET).date()
+    if not is_trading_day(d):
+        return None
+    t = EARLY_CLOSE if d in EARLY_CLOSES else REG_CLOSE
+    return datetime.combine(d, t, tzinfo=ET).astimezone(timezone.utc)
+
+
+def trading_day_of(ts: datetime) -> date:
+    """ATLAS accounting day = America/New_York calendar date (also for 24/7 crypto)."""
+    return ts.astimezone(ET).date()

@@ -151,3 +151,18 @@ def test_yahoo_hourly_session_anchored_bars():
     from app.config import load_settings
     from app.data.validation import validate_candles
     assert validate_candles(c, "1h", c[0].asset_class, load_settings().data, now)[0] == []
+
+
+def test_yahoo_merges_offgrid_snapshot_into_forming_bar():
+    from datetime import datetime, timezone
+    from app.data.providers.yahoo import YahooProvider
+    from tests.fakes import FakeResp, SeqSession
+    t0 = int(datetime(2026, 11, 24, 8, 55, tzinfo=timezone.utc).timestamp())
+    ts = [t0, t0 + 300, t0 + 300 + 214]                      # 08:55, 09:00 (forming), 09:03:34 snapshot
+    payload = {"chart": {"result": [{"timestamp": ts, "meta": {}, "indicators": {"quote": [{
+        "open": [1.0, 2.0, 2.5], "high": [1.1, 2.1, 2.6], "low": [0.9, 1.9, 2.4], "close": [1.0, 2.0, 2.5],
+        "volume": [10, 5, 1]}]}}]}}
+    p = YahooProvider(session=SeqSession(FakeResp(200, payload)))
+    c = p.fetch_candles("AAPL", "5m", 10, now=datetime(2026, 11, 24, 9, 3, 40, tzinfo=timezone.utc))
+    assert len(c) == 2 and c[0].is_complete and not c[1].is_complete
+    assert c[1].close == 2.5 and c[1].high == 2.6 and c[1].low == 1.9 and c[1].volume == 6

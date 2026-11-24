@@ -22,6 +22,16 @@ execution:
   crypto_fee_bps: 10.0     # Binance spot base-tier taker (EU-available). Was 60 (Coinbase retail) in M1-M2; see DECISIONS D31
   slippage_bps_stock: 5.0
   slippage_bps_crypto: 10.0
+  fractional_stocks: true
+  stock_qty_step: 0.001
+  crypto_qty_step: 0.000001
+  min_notional_usd: 5.0
+  assumed_half_spread_bps_stock: 2.0
+  assumed_half_spread_bps_crypto: 2.0
+  max_order_pct_bar_dollar_volume: 1.0
+  manage_timeframe: "1m"
+  max_quote_age_seconds: 90
+  alpaca_paper_orders_enabled: false   # Alpaca PAPER order mirroring; off by default (see DECISIONS D56)
 
 portfolio:
   starting_equity_usd: 1000.0
@@ -36,6 +46,15 @@ risk:
   require_take_profit: true
   allow_averaging_down: false
   allow_martingale: false
+  require_complete_signal: true
+  max_position_pct_equity: 50.0
+  max_entry_drift_r: 0.25
+  max_consecutive_losses_per_day: 3
+  symbol_cooldown_minutes_after_loss: 60
+  stock_no_new_entries_minutes_before_close: 15
+  stock_flatten_minutes_before_close: 5
+  stock_overnight_holding: false
+  crypto_max_hold_hours: 24
 
 scoring:
   min_score_to_trade: 70

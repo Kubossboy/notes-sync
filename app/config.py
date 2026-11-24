@@ -61,6 +61,19 @@ class ExecutionSection(_Strict):
     crypto_fee_bps: float = Field(60.0, ge=0)
     slippage_bps_stock: float = Field(5.0, ge=0)
     slippage_bps_crypto: float = Field(10.0, ge=0)
+    # --- paper simulator (milestone 5)
+    fractional_stocks: bool = True                  # fractional shares (Alpaca supports them); False -> whole shares
+    stock_qty_step: float = Field(0.001, gt=0)
+    crypto_qty_step: float = Field(0.000001, gt=0)
+    min_notional_usd: float = Field(5.0, gt=0)
+    assumed_half_spread_bps_stock: float = Field(2.0, ge=0)   # used when no bid/ask is available
+    assumed_half_spread_bps_crypto: float = Field(2.0, ge=0)
+    max_order_pct_bar_dollar_volume: float = Field(1.0, gt=0, le=100)
+    manage_timeframe: Literal["1m", "5m"] = "1m"
+    max_quote_age_seconds: float = Field(90, gt=0)
+    # Alpaca PAPER order mirroring (paper-api.alpaca.markets only). OFF by default; the
+    # internal $1,000 ledger stays authoritative either way.
+    alpaca_paper_orders_enabled: bool = False
 
 
 class PortfolioSection(_Strict):
@@ -77,6 +90,15 @@ class RiskSection(_Strict):
     require_take_profit: Literal[True] = True
     allow_averaging_down: Literal[False] = False
     allow_martingale: Literal[False] = False
+    require_complete_signal: Literal[True] = True     # 'incomplete' signals are never executed
+    max_position_pct_equity: float = Field(50.0, gt=0, le=100)
+    max_entry_drift_r: float = Field(0.25, ge=0, le=1)   # price ran > 0.25 R past entry -> no chasing
+    max_consecutive_losses_per_day: int = Field(3, ge=1)  # anti revenge trading
+    symbol_cooldown_minutes_after_loss: float = Field(60, ge=0)
+    stock_no_new_entries_minutes_before_close: float = Field(15, ge=0)
+    stock_flatten_minutes_before_close: float = Field(5, ge=1)
+    stock_overnight_holding: Literal[False] = False       # day trading: flat at the close
+    crypto_max_hold_hours: float = Field(24, gt=0)
 
 
 class Weights(_Strict):

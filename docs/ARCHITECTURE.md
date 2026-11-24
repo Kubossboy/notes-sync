@@ -72,3 +72,21 @@ Failure handling: one source failing = warning (`system_events.news_source_faile
 health = last ingest ≤ 60 min old and ≥ 50 % of sources ok, otherwise the
 news and sentiment components are `None` (signal incomplete); **all** sources
 failing = SAFE STATE.
+
+## Risk & paper execution (Milestone 5)
+
+```
+PaperTrader.run_once(now)
+  1. manage open positions: real 1m bars since entry (incl. forming bar) -> stop / target / time exit,
+     mark-to-market. Cannot fetch data for an open position -> SAFE STATE (no new trades), retried next cycle
+  2. if trading allowed: scanner (stocks + crypto, live) -> signals with status 'new' and score >= 70
+  3. quote (cross-checked consensus + best bid/ask) -> RiskEngine.evaluate  (deterministic rules, all journaled)
+  4. approved -> PaperSimulator.open_position (order_requests -> simulated_fills -> positions, one transaction)
+     [optional, OFF: AlpacaPaperBroker.submit_bracket mirror for stocks, paper endpoint only]
+  5. Ledger.state -> equity_snapshots
+kill(reason, flatten) -> SAFE STATE + market-close every open paper position
+```
+
+Idempotency: entry `client_order_id = atlas-entry-sig<signal_id>` (UNIQUE), exit
+`atlas-exit-pos<position_id>`; partial unique index = one open position per symbol;
+closed positions cannot be re-opened; fills immutable; audit tables append-only.
