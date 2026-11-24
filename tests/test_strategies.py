@@ -187,8 +187,8 @@ def test_plan_stop_sanity(stop, needle):
 def test_total_score_missing_components():
     comps = {"technical": 100, "momentum_volume": 50, "liquidity": 80, "news": None, "sentiment": None, "quant": None}
     total, avail, on_avail = total_score(comps, SET)
-    assert total == pytest.approx(25 + 10 + 8)
-    assert avail == pytest.approx(0.55) and on_avail == pytest.approx(43 / 0.55, abs=0.01)
+    assert total == pytest.approx(10 + 5 + 8)                       # news-driven weights (D77)
+    assert avail == pytest.approx(0.30) and on_avail == pytest.approx(23 / 0.30, abs=0.01)
 
 
 def test_component_scores_and_liquidity():

@@ -182,11 +182,14 @@ def momentum_df(last_bull=True, vol_spike=6.0):
 
 def test_news_momentum_fires_only_with_catalyst_and_confirmation():
     p = {"min_rvol": 2.0, "high_lookback": 6, "min_confidence": 0.6}
-    cat = [{"title": "Nvidia beats", "confidence": 0.9, "catalysts": ["earnings_beat"]}]
+    cat = [{"title": "Nvidia beats", "confidence": 0.9, "catalysts": ["earnings_beat"], "verified": True}]
     df = momentum_df()
+    unverified = [dict(cat[0], verified=False)]
+    with pytest.raises(NoSetup, match="VERIFIED"):       # decisions need VERIFIED news (D77)
+        news_momentum(StrategyContext("NVDA", AssetClass.STOCK, "5m", df, news=_ctx(0.7, pos=unverified)), p)
     s = news_momentum(StrategyContext("NVDA", AssetClass.STOCK, "5m", df, news=_ctx(0.7, pos=cat)), p)
     assert s.strategy == "news_momentum" and s.stop < s.entry and s.evidence["catalysts"]
-    with pytest.raises(NoSetup, match="no fresh positive catalyst"):
+    with pytest.raises(NoSetup, match="no fresh VERIFIED positive catalyst"):
         news_momentum(StrategyContext("NVDA", AssetClass.STOCK, "5m", df, news=_ctx(0.7)), p)
     with pytest.raises(NoSetup, match="negative"):
         news_momentum(StrategyContext("NVDA", AssetClass.STOCK, "5m", df,

@@ -66,7 +66,7 @@ class PaperSimulator:
                     "unrealized_pnl_usd": -fee, "status": "open", "entry_order_id": oid,
                     "signal_id": p.signal_id, "planned_risk_usd": d.planned_risk_usd, "initial_stop": p.stop,
                     "mark_price": fill.price, "mark_ts": ts, "mfe_price": fill.price, "mae_price": fill.price,
-                    "trading_day": trading_day_of(now).isoformat()})
+                    "trading_day": trading_day_of(now).isoformat(), "validation_status": p.validation_status})
                 self.db.conn.execute("UPDATE order_requests SET status='filled', filled_ts=?, avg_fill_price=?, "
                                      "position_id=? WHERE id=?", (ts, fill.price, pid, oid))
                 if p.signal_id is not None:
@@ -120,6 +120,17 @@ class PaperSimulator:
                  trading_day_of(now).isoformat(), pos["id"]))
             self.db.conn.execute("UPDATE order_requests SET status='filled', filled_ts=?, avg_fill_price=? "
                                  "WHERE id=?", (ts, fill.price, oid))
+            if pos.get("validation_status") == "forward_test":     # separate log, judged after >= 30 trades
+                ev = self.db.conn.execute("SELECT evidence_json FROM signals WHERE id=?",
+                                          (pos["signal_id"],)).fetchone() if pos["signal_id"] else None
+                cats = json.loads(ev["evidence_json"]).get("catalysts") if ev and ev["evidence_json"] else None
+                self.db.insert("forward_test_trades", {
+                    "ts": ts, "position_id": pos["id"], "signal_id": pos["signal_id"], "symbol": pos["symbol"],
+                    "asset_class": ac.value, "strategy": pos["strategy"], "opened_ts": pos["opened_ts"],
+                    "closed_ts": ts, "entry_price": pos["entry_price"], "exit_price": fill.price, "quantity": qty,
+                    "planned_risk_usd": pos["planned_risk_usd"], "fees_usd": fees, "pnl_usd": round(pnl, 8),
+                    "r_multiple": None if r_mult is None else round(r_mult, 4), "exit_reason": reason,
+                    "catalysts_json": json.dumps(cats, default=str) if cats else None})
         self.db.log_event("paper_exit", "execution", f"{pos['symbol']} {reason} {qty} @ {fill.price:.6g} "
                                                      f"pnl ${pnl:.4f}", "info" if pnl >= 0 else "warning")
         return {"position_id": pos["id"], "reason": reason, "exit_price": fill.price, "pnl": round(pnl, 6),

@@ -125,6 +125,17 @@ their signals `rejected`; strategies with too little data, not backtestable
 quant component empty → `incomplete` → never executed. Walk-forward winners are
 reported, never auto-deployed. Results: `docs/BACKTEST_RESULTS.md`.
 
+News-driven forward paper test (after M6): technical strategies failed validation and stay
+rejected. Decisions are now driven mainly by **verified** news/catalysts (score weights news 40 /
+sentiment 15 / quant 15 / liquidity 10 / technical 10 / momentum 10; technicals only confirm the
+entry). `news_momentum` cannot be backtested (no free news history), so it runs as a clearly
+labelled **forward_test** on the internal $1,000 ledger only (never Alpaca orders), with all M5
+risk limits. Every forward-test trade is logged in `forward_test_trades`; judge after ≥ 30 trades:
+
+```bash
+.venv/bin/python -m app.main forwardtest     # stats + last trades
+```
+
 Other commands: `python -m app.main halt <reason>` (enter SAFE STATE: no new
 simulated trades) and `python -m app.main resume --by <name>` (journaled).
 

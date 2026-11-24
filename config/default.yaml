@@ -58,11 +58,11 @@ risk:
 
 scoring:
   min_score_to_trade: 70
-  weights:                 # initial hypotheses, NOT validated. Must sum to 1.0
-    technical: 0.25
-    momentum_volume: 0.20
-    news: 0.20
-    sentiment: 0.10
+  weights:                 # hypotheses, NOT validated. Must sum to 1.0. News-driven reweight (DECISIONS D77)
+    technical: 0.10        # was 0.25 - technicals only confirm the entry
+    momentum_volume: 0.10  # was 0.20
+    news: 0.40             # was 0.20 - verified news / catalysts drive decisions
+    sentiment: 0.15        # was 0.10
     quant: 0.15
     liquidity: 0.10
 
@@ -106,7 +106,7 @@ scanner:
     relative_volume_anomaly: {enabled: true, params: {min_rvol: 3.0, close_in_range: 0.75}}
     trend_continuation:     {enabled: true, params: {pullback_bars: 3, rsi_min: 40, rsi_max: 65}}
     sr_breakout:            {enabled: true, params: {min_touches: 2, min_rvol: 1.3}}
-    news_momentum:          {enabled: true, params: {min_rvol: 2.0, high_lookback: 6, min_confidence: 0.6}}
+    news_momentum:          {enabled: true, params: {min_rvol: 2.0, high_lookback: 6, min_confidence: 0.6, require_verified: 1}}
   crypto_strategies:
     momentum_breakout:      {enabled: true, params: {donchian: 48, min_roc: 0.4, min_rvol: 2.0, rsi_max: 82}}
     volume_expansion:       {enabled: true, params: {min_rvol: 2.5, bars: 2}}
@@ -124,6 +124,8 @@ news:
   window_hours: 24
   half_life_hours: 6
   catalyst_hours: 16
+  catalyst_session_aware: true   # stocks: after-close earnings/8-Ks stay eligible through the next regular session
+  catalyst_max_hours: 96
   filings_lookback_days: 7
   form4_per_ticker: 5
   story_similarity: 0.45
@@ -146,6 +148,9 @@ validation:
   stress_cost_multiplier: 1.5     # PF must stay > 1 with 50 % higher fees/slippage/spread
   max_age_days: 30                # stale validation -> quant unavailable (incomplete)
   auto_deploy_params: false       # walk-forward-selected parameters are reported, never deployed
+  forward_test_strategies: [news_momentum]   # not backtestable -> forward PAPER test on the internal $1,000 ledger only
+  forward_test_quant_score: 50    # neutral quant score while forward-testing (no evidence either way)
+  forward_test_target_trades: 30  # judge the forward test after >= 30 closed trades
 
 http:
   timeout_seconds: 10

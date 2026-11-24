@@ -13,6 +13,7 @@ import requests
 from app.config import PROJECT_ROOT, Secrets, Settings
 from app.core.logging_setup import get_logger
 from app.core.safety import SafeState
+from app.data.calendar import catalyst_fresh
 from app.database.db import Database, utcnow
 from app.intelligence import catalysts as CAT
 from app.intelligence.feeds import RawItem, fetch_feed
@@ -347,7 +348,8 @@ class NewsEngine:
         market = self._events("CRYPTO_MARKET", since, now) if asset_class == "crypto" else []
         agg, weight = self._aggregate(own, now)
         magg, _ = self._aggregate(macro + market, now)
-        cat_since = now - timedelta(hours=self.cfg.catalyst_hours)
+        stock = asset_class == "stock"
+        cat_events = self._events(symbol, now - timedelta(hours=self.cfg.catalyst_max_hours), now) if stock else own
 
         def brief(e):
             return {"id": e["id"], "title": e["title"][:160], "source": e["source"], "published": e["published_ts"],
@@ -359,8 +361,9 @@ class NewsEngine:
             return datetime.fromisoformat(e["published_ts"] or e["fetched_ts"])
 
         neg_high = [brief(e) for e in own if e["verified"] and e["impact"] == "high" and (e["direction"] or 0) <= -0.5]
-        pos = [brief(e) for e in own if ts(e) >= cat_since and (e["direction"] or 0) >= 0.5
-               and e["impact"] in ("medium", "high")]
+        pos = [brief(e) for e in cat_events if (e["direction"] or 0) >= 0.5 and e["impact"] in ("medium", "high")
+               and catalyst_fresh(ts(e), now, self.cfg.catalyst_hours, stock and self.cfg.catalyst_session_aware,
+                                  self.cfg.catalyst_max_hours)]
         return {"symbol": symbol, "health": self.health(now), "events": len(own), "aggregate": agg,
                 "weight": round(weight, 3), "macro_aggregate": magg, "macro_events": len(macro) + len(market),
                 "negative_high_verified": neg_high[:3], "positive_catalysts": pos[:5],

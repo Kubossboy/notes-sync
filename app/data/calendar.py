@@ -79,6 +79,34 @@ def regular_close_at(ts: datetime) -> datetime | None:
     return datetime.combine(d, t, tzinfo=ET).astimezone(timezone.utc)
 
 
+def first_session_close_after(ts: datetime, max_days: int = 10) -> datetime | None:
+    """Close (UTC) of the first regular session that ends after `ts` (same day if before/during the session)."""
+    from datetime import timedelta, timezone
+    d = ts.astimezone(ET).date()
+    for _ in range(max_days):
+        if d.year in KNOWN_YEARS and is_trading_day(d):
+            close = datetime.combine(d, EARLY_CLOSE if d in EARLY_CLOSES else REG_CLOSE, tzinfo=ET)
+            if close > ts:
+                return close.astimezone(timezone.utc)
+        d = d + timedelta(days=1)
+    return None
+
+
+def catalyst_fresh(published: datetime, now: datetime, hours: float, session_aware: bool = True,
+                   max_hours: float = 96) -> bool:
+    """Flat window OR (stocks) until the close of the first regular session after publication, so an
+    after-close earnings release / 8-K is still eligible at the next open. Never in the future."""
+    age_h = (now - published).total_seconds() / 3600
+    if age_h < 0 or age_h > max_hours:
+        return False
+    if age_h <= hours:
+        return True
+    if not session_aware:
+        return False
+    close = first_session_close_after(published)
+    return close is not None and now <= close
+
+
 def trading_day_of(ts: datetime) -> date:
     """ATLAS accounting day = America/New_York calendar date (also for 24/7 crypto)."""
     return ts.astimezone(ET).date()

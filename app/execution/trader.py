@@ -103,7 +103,8 @@ class PaperTrader:
         except DuplicateOrder as e:
             res.update(approved=False, reason=str(e))
             return res
-        if self.alpaca is not None and self.alpaca.orders_enabled and p.asset_class == AssetClass.STOCK:
+        if (self.alpaca is not None and self.alpaca.orders_enabled and p.asset_class == AssetClass.STOCK
+                and p.validation_status != "forward_test"):      # forward tests: internal ledger ONLY
             try:   # mirror only; the internal ledger stays authoritative
                 o = self.alpaca.submit_bracket(p.symbol, d.quantity, p.stop, p.target, res["fill"]["client_order_id"])
                 self.db.conn.execute("UPDATE order_requests SET external_order_id=?, external_status=? WHERE id=?",

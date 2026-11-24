@@ -21,13 +21,15 @@ STOCK_NOW = datetime(2026, 11, 24, 16, 0, tzinfo=UTC)        # 11:00 ET regular 
 
 
 def add_signal(db, symbol="BTC-USD", ac="crypto", entry=100.0, stop=99.0, target=103.5, status="new",
-               score=75.0, data_status="live", expires=None, now=NOW, strategy="momentum_breakout"):
+               score=75.0, data_status="live", expires=None, now=NOW, strategy="momentum_breakout",
+               validation_status="validated"):
     sid = db.insert("signals", {
         "ts": now.isoformat(), "symbol": symbol, "asset_class": ac, "strategy": strategy, "direction": "long",
         "entry_price": entry, "stop_loss": stop, "take_profit": target, "reward_risk": 2.2,
         "data_ts": now.isoformat(), "status": status, "timeframe": "15m",
         "signal_key": f"{symbol}|{strategy}|{now.isoformat()}|{entry}|{status}|{score}",
-        "expires_ts": (expires or now + timedelta(minutes=30)).isoformat(), "data_status": data_status})
+        "expires_ts": (expires or now + timedelta(minutes=30)).isoformat(), "data_status": data_status,
+        "validation_status": validation_status})
     db.insert("signal_scores", {"signal_id": sid, "ts": now.isoformat(), "total_score": score, "weights_json": "{}"})
     return sid
 

@@ -58,7 +58,7 @@ def test_crypto_scan_produces_journaled_signal(settings, db, monkeypatch):
     assert row["signal_key"].startswith("BTC-USD|momentum_breakout|15m|")
     assert row["data_ts"] == (START + timedelta(minutes=15 * (N - 2))).isoformat()   # last COMPLETE bar
     sc_row = db.conn.execute("SELECT * FROM signal_scores WHERE signal_id=?", (sig["signal_id"],)).fetchone()
-    assert sc_row["news"] is None and sc_row["available_weight"] == pytest.approx(0.55)
+    assert sc_row["news"] is None and sc_row["available_weight"] == pytest.approx(0.30)
     assert db.conn.execute("SELECT COUNT(*) FROM strategy_decisions WHERE signal_id=?",
                            (sig["signal_id"],)).fetchone()[0] == 1
     assert db.conn.execute("SELECT COUNT(*) FROM orderbook_snapshots").fetchone()[0] == 1  # snapshot journaled

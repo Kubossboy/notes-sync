@@ -29,7 +29,8 @@ def test_real_paper_cycle_btc(settings):
             "ts": now.isoformat(), "symbol": "BTC-USD", "asset_class": "crypto", "strategy": "live_test_synthetic",
             "direction": "long", "entry_price": px, "stop_loss": px * 0.99, "take_profit": px * 1.04,
             "data_ts": now.isoformat(), "status": "new", "timeframe": "15m", "signal_key": f"livetest|{now}",
-            "expires_ts": (now + timedelta(minutes=10)).isoformat(), "data_status": "live"})
+            "expires_ts": (now + timedelta(minutes=10)).isoformat(), "data_status": "live",
+            "validation_status": "validated"})   # synthetic test signal, labelled
         ctx.db.insert("signal_scores", {"signal_id": sid, "ts": now.isoformat(), "total_score": 75, "weights_json": "{}"})
         row = ctx.db.conn.execute("SELECT s.*, sc.total_score FROM signals s JOIN signal_scores sc "
                                   "ON sc.signal_id=s.id WHERE s.id=?", (sid,)).fetchone()

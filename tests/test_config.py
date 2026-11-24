@@ -16,7 +16,7 @@ def test_defaults_match_spec():
     assert s.risk.min_reward_risk == 2.0
     w = s.scoring.weights
     assert (w.technical, w.momentum_volume, w.news, w.sentiment, w.quant, w.liquidity) == \
-        (0.25, 0.20, 0.20, 0.10, 0.15, 0.10)
+        (0.10, 0.10, 0.40, 0.15, 0.15, 0.10)   # spec start 25/20/20/10/15/10, news-driven reweight D77
 
 
 @pytest.mark.parametrize("override", [

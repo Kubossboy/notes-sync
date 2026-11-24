@@ -198,12 +198,14 @@ class Scanner:
                         "aggregate", "events", "negative_high_verified", "positive_catalysts", "unexpected", "top")},
                     "sentiment": ctx.sentiment, "market_trend": self._market_trend,
                     "note": ("strategy validated out-of-sample (still not a guarantee)" if quant["state"] == "validated"
+                             else "FORWARD PAPER TEST - unvalidated, internal ledger only" if quant["state"] == "forward_test"
                              else "parameters are unvalidated hypotheses - not a reliable predictive edge")}
         sig = {"strategy": setup.strategy, "symbol": setup.symbol, "direction": setup.direction,
                "entry": round(plan.entry, 6), "stop": round(plan.stop, 6), "target": round(plan.target, 6),
                "rr_net": plan.reward_risk_net, "score": total, "score_on_available": on_avail,
                "available_weight": avail, "confidence": confidence, "status": status,
                "reject_reason": "; ".join(problems) or None, "data_ts": data_ts,
+               "validation_status": quant["state"],
                "persisted": False}
         if mode != "live":
             return sig
@@ -217,7 +219,7 @@ class Scanner:
                     "data_ts": data_ts, "status": status, "evidence_json": json.dumps(evidence, default=str),
                     "timeframe": tf, "signal_key": key, "expires_ts": expires.isoformat(),
                     "data_status": s.status.value, "scan_run_id": run_id,
-                    "reject_reason": sig["reject_reason"]})
+                    "reject_reason": sig["reject_reason"], "validation_status": quant["state"]})
                 self.db.insert("signal_scores", {
                     "signal_id": sid, "ts": utcnow(), "total_score": total, **comps,
                     "weights_json": json.dumps(self.settings.scoring.weights.model_dump()),

@@ -102,10 +102,10 @@ class RiskSection(_Strict):
 
 
 class Weights(_Strict):
-    technical: float = 0.25
-    momentum_volume: float = 0.20
-    news: float = 0.20
-    sentiment: float = 0.10
+    technical: float = 0.10          # news-driven reweight (D77): technicals = entry confirmation only
+    momentum_volume: float = 0.10
+    news: float = 0.40
+    sentiment: float = 0.15
     quant: float = 0.15
     liquidity: float = 0.10
 
@@ -194,7 +194,10 @@ class NewsSection(_Strict):
     min_source_success_ratio: float = Field(0.5, gt=0, le=1)
     window_hours: float = Field(24, gt=0)
     half_life_hours: float = Field(6, gt=0)
-    catalyst_hours: float = Field(16, gt=0)           # freshness for news-driven momentum
+    catalyst_hours: float = Field(16, gt=0)           # freshness for news-driven momentum (flat window)
+    catalyst_session_aware: bool = True               # stocks: also fresh until the close of the first
+                                                      # regular session after publication (after-close 8-Ks/earnings)
+    catalyst_max_hours: float = Field(96, gt=0)       # hard cap (covers Friday after-close -> Monday)
     filings_lookback_days: int = Field(7, ge=1, le=60)
     form4_per_ticker: int = Field(5, ge=0, le=20)
     story_similarity: float = Field(0.45, gt=0, lt=1)
@@ -218,6 +221,11 @@ class ValidationSection(_Strict):
     stress_cost_multiplier: float = Field(1.5, ge=1.0)
     max_age_days: float = Field(30, gt=0)                   # older validation -> quant unavailable
     auto_deploy_params: Literal[False] = False              # walk-forward winners are never auto-deployed
+    # strategies that cannot be backtested (news-driven) may run a FORWARD PAPER TEST on the internal
+    # ledger only (never Alpaca orders); technical strategies that FAILED validation stay rejected
+    forward_test_strategies: list[str] = ["news_momentum"]
+    forward_test_quant_score: float = Field(50.0, ge=0, le=100)   # neutral: no evidence either way yet
+    forward_test_target_trades: int = Field(30, ge=10)
 
 
 class HttpSection(_Strict):

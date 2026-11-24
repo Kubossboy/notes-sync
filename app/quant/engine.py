@@ -48,6 +48,10 @@ class QuantEngine:
         if not self.s.validation.enabled:
             return {"state": "unavailable", "reason": "validation disabled in config"}
         if strategy in NOT_BACKTESTABLE:
+            if strategy in self.s.validation.forward_test_strategies:
+                return {"state": "forward_test", "reason": f"FORWARD PAPER TEST (not backtestable: "
+                        f"{NOT_BACKTESTABLE[strategy]}) - internal $1,000 ledger only, never Alpaca orders; "
+                        "unvalidated, judged after >= " f"{self.s.validation.forward_test_target_trades} trades"}
             return {"state": "unavailable", "reason": f"not backtestable: {NOT_BACKTESTABLE[strategy]}"}
         r = self.latest(ac, strategy)
         if r is None:
@@ -80,6 +84,11 @@ class QuantEngine:
         if st["state"] == "failed":
             out["score"] = 0.0
             out["problems"] = [f"strategy failed backtest validation (run #{st['run_id']}): {st['reason'][:200]}"]
+            return out
+        if st["state"] == "forward_test":
+            out["score"] = float(self.s.validation.forward_test_quant_score)
+            out["evidence"] = {"forward_test": forward_test_stats(self.db, setup.strategy),
+                               "note": "neutral quant score - no statistical evidence of an edge yet"}
             return out
         if st["state"] != "validated":
             return out
@@ -117,3 +126,24 @@ class QuantEngine:
                              "oos_pf": o.get("profit_factor"), "oos_exp_r": o.get("expectancy_r"),
                              "reason": st["reason"][:160]})
         return rows
+
+
+def forward_test_stats(db, strategy: str | None = None) -> dict:
+    """Stats of closed forward-test trades (table forward_test_trades) + currently open ones."""
+    q = "SELECT * FROM forward_test_trades" + (" WHERE strategy=?" if strategy else "") + " ORDER BY closed_ts"
+    rows = [dict(r) for r in db.conn.execute(q, (strategy,) if strategy else ()).fetchall()]
+    open_n = db.conn.execute("SELECT COUNT(*) FROM positions WHERE status='open' AND validation_status='forward_test'"
+                             + (" AND strategy=?" if strategy else ""), (strategy,) if strategy else ()).fetchone()[0]
+    pnl = [r["pnl_usd"] for r in rows]
+    wins, losses = [x for x in pnl if x > 0], [x for x in pnl if x <= 0]
+    eq, peak, dd = 0.0, 0.0, 0.0
+    for x in pnl:
+        eq += x
+        peak = max(peak, eq)
+        dd = max(dd, peak - eq)
+    rs = [r["r_multiple"] for r in rows if r["r_multiple"] is not None]
+    return {"closed_trades": len(rows), "open_trades": open_n,
+            "win_rate": round(len(wins) / len(rows), 4) if rows else None,
+            "profit_factor": round(sum(wins) / -sum(losses), 3) if losses and sum(losses) < 0 else None,
+            "net_pnl_usd": round(sum(pnl), 4), "expectancy_r": round(sum(rs) / len(rs), 4) if rs else None,
+            "max_drawdown_usd": round(dd, 4), "fees_usd": round(sum(r["fees_usd"] for r in rows), 4)}

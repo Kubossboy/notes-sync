@@ -74,12 +74,14 @@ class Proposal:
     status: str
     expires_ts: datetime | None
     data_status: str | None
+    validation_status: str | None = None     # validated | forward_test | failed | unavailable
 
     @classmethod
     def from_signal_row(cls, r) -> "Proposal":
+        vs = r["validation_status"] if "validation_status" in r.keys() else None
         return cls(r["id"], r["symbol"], AssetClass(r["asset_class"]), r["strategy"], r["direction"],
                    r["entry_price"], r["stop_loss"], r["take_profit"], r["total_score"], r["status"],
-                   datetime.fromisoformat(r["expires_ts"]) if r["expires_ts"] else None, r["data_status"])
+                   datetime.fromisoformat(r["expires_ts"]) if r["expires_ts"] else None, r["data_status"], vs)
 
 
 @dataclass
@@ -156,6 +158,10 @@ class RiskEngine:
         add("long_only", p.direction == "long" or self.ex.allow_short, detail=p.direction)
         add("signal_complete", p.status == "new",
             detail=f"signal status '{p.status}' (only complete, non-rejected signals are executable)")
+        ft_ok = p.validation_status == "forward_test" and p.strategy in self.s.validation.forward_test_strategies
+        add("strategy_validated_or_forward_test", p.validation_status == "validated" or ft_ok,
+            detail=f"validation status '{p.validation_status}' (failed / unvalidated strategies never trade; "
+                   "forward_test only for configured non-backtestable strategies, internal ledger only)")
         add("score_threshold", (p.score or 0) >= self.s.scoring.min_score_to_trade, p.score,
             self.s.scoring.min_score_to_trade)
         add("signal_not_expired", p.expires_ts is None or now < p.expires_ts,

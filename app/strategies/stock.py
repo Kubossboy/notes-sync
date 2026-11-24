@@ -134,8 +134,9 @@ def news_momentum(ctx: StrategyContext, p: dict) -> Setup:
     n = ctx.news
     need(n is not None and n["health"]["healthy"], "news engine unavailable or stale")
     need(not n["negative_high_verified"], "verified high-impact negative catalyst present")
-    cats = [c for c in n["positive_catalysts"] if (c["confidence"] or 0) >= p.get("min_confidence", 0.6)]
-    need(bool(cats), "no fresh positive catalyst (>= medium impact, confidence >= "
+    cats = [c for c in n["positive_catalysts"] if (c["confidence"] or 0) >= p.get("min_confidence", 0.6)
+            and (c.get("verified") or not p.get("require_verified", 1))]
+    need(bool(cats), "no fresh VERIFIED positive catalyst (>= medium impact, confidence >= "
                      f"{p.get('min_confidence', 0.6)})")
     d = ctx.df
     lb = int(p.get("high_lookback", 6))

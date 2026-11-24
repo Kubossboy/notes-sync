@@ -92,6 +92,7 @@ def main(argv: list[str] | None = None) -> int:
     bk.add_argument("--no-persist", action="store_true"); bk.add_argument("--json", help="write full results to FILE")
     bk.add_argument("--workers", type=int)
     sub.add_parser("validation", help="latest validation verdict per strategy (feeds the quant score)")
+    sub.add_parser("forwardtest", help="forward paper test stats (news-driven, internal ledger only)")
     sg = sub.add_parser("signals"); sg.add_argument("--limit", type=int, default=20)
     h = sub.add_parser("halt"); h.add_argument("reason", nargs="+")
     r = sub.add_parser("resume"); r.add_argument("--by", default="operator"); r.add_argument("--note", default="")
@@ -263,6 +264,14 @@ def main(argv: list[str] | None = None) -> int:
             if a.json:
                 with open(a.json, "w") as fh:
                     json.dump(results, fh, indent=1, default=str)
+        elif a.cmd == "forwardtest":
+            from app.quant.engine import forward_test_stats
+            v = ctx.settings.validation
+            print(json.dumps({"strategies": v.forward_test_strategies, "target_trades": v.forward_test_target_trades,
+                              "stats": forward_test_stats(ctx.db)}, indent=1))
+            for r in ctx.db.conn.execute("SELECT closed_ts, symbol, strategy, entry_price, exit_price, pnl_usd, "
+                                         "r_multiple, exit_reason FROM forward_test_trades ORDER BY id DESC LIMIT 20"):
+                print(dict(r))
         elif a.cmd == "validation":
             from app.quant.engine import QuantEngine
             for r in QuantEngine(ctx.settings, ctx.db).summary():
