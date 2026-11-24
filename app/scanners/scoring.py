@@ -16,7 +16,7 @@ from app.strategies.base import Setup, StrategyContext, val
 
 PENDING = {"news": "news engine unavailable or stale (no healthy ingest within news.max_health_age_minutes)",
            "sentiment": "unavailable while the news engine is not healthy",
-           "quant": "statistical validation / backtests (milestone 6)"}
+           "quant": "strategy not validated by backtest (see `python -m app.main validation`)"}
 
 
 def _clamp(x: float) -> float:

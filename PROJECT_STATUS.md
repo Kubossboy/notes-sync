@@ -1,9 +1,9 @@
 # PROJECT STATUS – ATLAS Trading AI
 
-_Last updated: 2026-11-24 (Europe/Prague) · version 0.5.0-m5_
+_Last updated: 2026-11-24 (Europe/Prague) · version 0.6.0-m6_
 
 ## Current development phase
-Milestone 5 – Risk engine and paper execution: **complete**. Next: Milestone 6 – Backtesting and validation.
+Milestone 6 – Backtesting and validation: **complete**. Next: Milestone 7 – Dashboard.
 
 ## Completed modules
 - M1 foundation: config (strict, paper-only), logging + redaction, SQLite journal (append-only), safety/SAFE STATE, probes, CLI.
@@ -29,11 +29,19 @@ Milestone 5 – Risk engine and paper execution: **complete**. Next: Milestone 6
   - Kill switch (`kill --flatten`), CLI: trade, portfolio, positions, orders, risk
   - Alpaca paper adapter: bracket-order mirroring implemented, OFF by default; read-only eligibility checked
 
+- M6 backtesting & validation:
+  - Free historical bars cached in `var/history`: Coinbase 15m (2 y), Alpaca IEX 5m (2 y), Yahoo 5m (60 d robustness)
+  - Bar-by-bar replay of the live strategies + plan gate + cost/fill model + shared `size_position()` + portfolio/loss rules
+  - IS/OOS (60/40), 5-fold walk-forward, loose/strict sensitivity, ×1.5 cost stress, regime / per-symbol breakdown, diagnostic R:R≥1 run
+  - Verdicts journaled in append-only `backtest_runs` / `backtest_trades`; QuantEngine feeds the quant score component
+  - CLI: `backtest`, `validation`; results in docs/BACKTEST_RESULTS.md
+
 ## Remaining tasks
-M6 backtesting/validation (quant component) → M7 dashboard → M8 live paper trading.
+M7 dashboard → M8 live paper trading. Planned (Kubiqq): reweight towards news/catalyst-driven decisions (not started).
 
 ## Known bugs / limitations
-- Signals remain `incomplete` until the quant component (M6) exists: max reachable score 85, so live `trade` cycles execute nothing yet by design. Execution path verified with a labelled synthetic signal on real BTC quotes/bars (temp DB).
+- **No strategy is validated** (stocks: all failed OOS; crypto: insufficient trades after the net R:R gate, negative in the diagnostic). So live `trade` cycles execute nothing, by design. Execution path verified with a labelled synthetic signal (M5).
+- Backtest limits: survivorship bias, IEX partial volume, assumed spreads, exits on 5m/15m bars (stop-first), composite score (news/sentiment) not reproducible historically; news_momentum and order-book strategies are not backtestable (no free archives).
 - Simulator limits: no partial fills, no queue/latency model, stops evaluated on 1m bars (intra-minute order unknown → stop assumed first), after-hours EOD exits use extended-hours quotes. Crypto costs are material: a 2.5 R gross target nets < 2 R with tight stops, so many crypto setups will be rejected.
 - Rule/lexicon NLP works on headlines + feed summaries only (no article bodies): misses nuance, sarcasm and complex negation (negated catalysts get direction 0). Spot checks found and fixed false positives (buyouts, "warp", "warns", Fed enforcement actions); more will exist.
 - Yahoo headline RSS includes many listicles/opinion pieces; they carry low weight but add noise. No earnings calendar yet (no free keyless source reachable: Nasdaq API timed out).
@@ -41,10 +49,9 @@ M6 backtesting/validation (quant component) → M7 dashboard → M8 live paper t
 - Story clustering is title-similarity based (Jaccard ≥ 0.45); differently worded reports of the same event may stay separate (= unverified).
 - Dev database contains news rows from analyzer versions 0-2 (development iterations); only the current version (3) is read.
 - Exchange status pages announce future maintenance; such items are stored but excluded from context until their time.
-- Strategy parameters (incl. news momentum) are unvalidated hypotheses until M6.
-- Earlier limits unchanged: Alpaca IEX partial volume, NYSE calendar 2025-2027 only, order-book imbalance spoofable.
+- Earlier limits unchanged: Alpaca IEX partial volume, NYSE calendar 2024-2027 only, order-book imbalance spoofable.
 
-## API integrations (probe 2026-11-24 ~10:10 Europe/Prague): 13/14 ok (Fed RSS returned one transient 404 at ~10:04)
+## API integrations (probe 2026-11-24 ~10:56 Europe/Prague): 12/14 ok (Fed RSS HTTP 404 again, recurring; X needs credentials)
 Yahoo, Alpaca market data (IEX), Alpaca paper account (ACTIVE), Binance, Coinbase, Kraken, CoinGecko, SEC EDGAR ×3, Fed RSS, MarketWatch RSS, CoinDesk RSS: ok. X API v2: needs_credentials.
 News ingest (real, 2026-11-24 ~09:52): 16/16 sources ok (15 feeds + SEC), 436 items, 172 verified, 142 with a catalyst, 67 Form 4 transactions, 0 items without a publication time.
 
@@ -52,14 +59,18 @@ News ingest (real, 2026-11-24 ~09:52): 16/16 sources ok (15 feeds + SEC), 436 it
 - Alpaca: env vars (present). SEC contact e-mail: `.env` (set). X API bearer token: missing (paid tier for search). Finnhub/NewsAPI: not used (would need sign-ups).
 
 ## Test results
-Offline: 240 passed. Live (real APIs): 32 passed (incl. real BTC paper cycle: risk-approved entry at real ask, management on real 1m bars, kill-switch flatten; Alpaca paper read-only eligibility). 0 failed.
+Offline: 260 passed. Live (real APIs): 35 passed (M6: real Coinbase / Alpaca IEX / Yahoo history + backtest on it) (incl. real BTC paper cycle: risk-approved entry at real ask, management on real 1m bars, kill-switch flatten; Alpaca paper read-only eligibility). 0 failed.
 Live tests at the 04:00 ET pre-market open exposed a Yahoo parser gap (off-grid snapshot bar) → fixed (D63).
 
 ## Backtesting results
-None yet (Milestone 6).
+See docs/BACKTEST_RESULTS.md.
+- Stocks: 6/6 strategies failed, with OOS PF 0.57–1.01.
+- Crypto: 5/5 have insufficient data under the live gate, and the diagnostic PF is 0.55–0.87.
+- 3 strategies are not backtestable.
+- No edge after costs, so nothing is tradable.
 
 ## Paper trading performance
-No trades yet (no complete signals until M6). Simulated equity: $1,000.00, daily loss limit $10.00, risk per trade $2.50.
+No trades (no validated strategy → no complete signals). Simulated equity: $1,000.00, daily loss limit $10.00, risk per trade $2.50.
 
 ## Current system configuration
 Paper only · internal_sim · $1,000 · 0.25 %/trade ($2.50) · daily loss 1 % ($10) · max 2 positions · R:R ≥ 2 (net of costs) ·
@@ -68,6 +79,6 @@ leverage/margin off · min score 70 · weights 25/20/20/10/15/10 · stocks 5m / 
 execution: internal_sim, Alpaca paper orders OFF, fractional stocks, min notional $5, stock flatten 5 min before close, crypto max hold 24 h ·
 news: refresh 15 min, health ≤ 60 min & ≥ 50 % sources, window 24 h, half-life 6 h, catalyst freshness 16 h.
 
-## Next development priorities (Milestone 6)
-Historical backtesting with the same cost/fill model, out-of-sample and walk-forward validation, strategy comparison,
-drawdown and parameter-sensitivity analysis; derive the quant score component so signals can become complete.
+## Next development priorities (Milestone 7)
+Dashboard: portfolio, positions, signals (with missing/failed components), risk evaluations, validation verdicts, system health.
+Requested next (not started): news/catalyst-driven reweighting. This needs a backtestable news history, a validated news strategy and a changed scoring/gating policy (see report).

@@ -102,6 +102,29 @@ hold 24 h. Real fills can be worse (partial fills, latency, queue position).
 Alpaca **paper** order mirroring exists but is **off** (`execution.alpaca_paper_orders_enabled: false`);
 read-only eligibility check: NVDA/AAPL/SPY/TSLA and BTC/ETH/SOL are tradable on the paper account.
 
+Backtesting & validation (Milestone 6):
+
+```bash
+.venv/bin/python -m app.main backtest --asset crypto      # 2 y Coinbase 15m: IS/OOS, walk-forward, sensitivity, cost stress
+.venv/bin/python -m app.main backtest --asset stock       # 2 y Alpaca IEX 5m (needs the Alpaca data keys)
+.venv/bin/python -m app.main backtest --asset stock --source yahoo --days 60   # robustness cross-check, not persisted
+.venv/bin/python -m app.main backtest --strategies momentum_breakout --json var/bt.json
+.venv/bin/python -m app.main validation                  # latest verdict per strategy = what the quant score sees
+```
+
+The backtester replays the **live** strategy code, plan gate, cost/fill model and
+position sizing bar by bar (entry at the next bar's open, stop assumed first,
+gaps hurt, same portfolio/risk limits). Each strategy gets an in-sample (first
+60 %) and out-of-sample (last 40 %) result, a 5-fold walk-forward, loose/strict
+neighbour parameters and a ×1.5 cost stress. A strategy is **validated** only if
+the out-of-sample result with the live parameters reaches ≥ 30 trades, profit
+factor ≥ 1.3, positive expectancy, max drawdown < 5 %, ≥ 60 % positive walk-forward
+folds, PF > 1 under cost stress and for both neighbours. Failed strategies make
+their signals `rejected`; strategies with too little data, not backtestable
+(news / order-book) or with a stale (> 30 d) or outdated validation leave the
+quant component empty → `incomplete` → never executed. Walk-forward winners are
+reported, never auto-deployed. Results: `docs/BACKTEST_RESULTS.md`.
+
 Other commands: `python -m app.main halt <reason>` (enter SAFE STATE: no new
 simulated trades) and `python -m app.main resume --by <name>` (journaled).
 
@@ -120,7 +143,10 @@ app/
                      S/R, volume profile, breakouts, trend, candlestick patterns)
   strategies/        stock.py (7) and crypto.py (7) strategy modules
   scanners/          scanner (data -> indicators -> strategies -> scored signals) + scoring technical/ fundamentals/ intelligence/ sentiment/
-  quant/ risk/ execution/ portfolio/ analytics/ dashboard/   (later milestones)
+  backtest/          history.py (free historical bars, cached), engine.py (replay), validation.py (IS/OOS/WF)
+  quant/             engine.py: validation verdict -> quant score component
+  risk/ execution/ portfolio/   risk engine, paper simulator/trader, ledger
+  analytics/ dashboard/         (later milestones)
 config/default.yaml  all non-secret settings
 .env.example         optional credentials (copy to .env, never commit)
 tests/               pytest suite (`-m live` = real network)

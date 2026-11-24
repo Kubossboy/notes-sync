@@ -85,6 +85,13 @@ def main(argv: list[str] | None = None) -> int:
     rk = sub.add_parser("risk", help="recent risk evaluations with failed checks"); rk.add_argument("--limit", type=int, default=10)
     ks = sub.add_parser("kill", help="KILL SWITCH: SAFE STATE (+ optionally flatten all paper positions)")
     ks.add_argument("reason", nargs="+"); ks.add_argument("--flatten", action="store_true")
+    bk = sub.add_parser("backtest", help="M6: IS/OOS + walk-forward + sensitivity + cost-stress validation")
+    bk.add_argument("--asset", choices=["stock", "crypto", "all"], default="all")
+    bk.add_argument("--strategies", nargs="*"); bk.add_argument("--symbols", nargs="*")
+    bk.add_argument("--days", type=int); bk.add_argument("--source", help="robustness source, e.g. yahoo (not persisted)")
+    bk.add_argument("--no-persist", action="store_true"); bk.add_argument("--json", help="write full results to FILE")
+    bk.add_argument("--workers", type=int)
+    sub.add_parser("validation", help="latest validation verdict per strategy (feeds the quant score)")
     sg = sub.add_parser("signals"); sg.add_argument("--limit", type=int, default=20)
     h = sub.add_parser("halt"); h.add_argument("reason", nargs="+")
     r = sub.add_parser("resume"); r.add_argument("--by", default="operator"); r.add_argument("--note", default="")
@@ -243,6 +250,23 @@ def main(argv: list[str] | None = None) -> int:
                                          "risk_budget_usd, rr_net, equity_usd, reason FROM risk_evaluations "
                                          "ORDER BY id DESC LIMIT ?", (a.limit,)):
                 print(dict(r))
+        elif a.cmd == "backtest":
+            from app.backtest.validation import format_report, run_validation
+            from app.data.models import AssetClass
+            results = []
+            for ac in ([AssetClass.CRYPTO, AssetClass.STOCK] if a.asset == "all" else [AssetClass(a.asset)]):
+                out = run_validation(ctx.settings, ctx.db, ac, ctx.secrets, symbols=a.symbols,
+                                     workers=a.workers, persist=not a.no_persist, days=a.days,
+                                     only=a.strategies, source=a.source)
+                results.append(out)
+                print(format_report(out))
+            if a.json:
+                with open(a.json, "w") as fh:
+                    json.dump(results, fh, indent=1, default=str)
+        elif a.cmd == "validation":
+            from app.quant.engine import QuantEngine
+            for r in QuantEngine(ctx.settings, ctx.db).summary():
+                print(r)
         elif a.cmd == "signals":
             rows = ctx.db.conn.execute(
                 "SELECT s.id, s.ts, s.symbol, s.strategy, s.status, s.entry_price, s.stop_loss, s.take_profit, "

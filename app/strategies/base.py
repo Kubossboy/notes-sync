@@ -7,6 +7,7 @@ engine (milestone 5) has the final word.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import cached_property
 from datetime import datetime
 from typing import Callable
 
@@ -30,11 +31,11 @@ class StrategyContext:
     news: dict | None = None            # NewsEngine.symbol_context (None = news engine off/unavailable)
     sentiment: dict | None = None       # app.sentiment.aggregate.combine output
 
-    @property
+    @cached_property            # df is never mutated after the context is built
     def last(self) -> pd.Series:
         return self.df.iloc[-1]
 
-    @property
+    @cached_property
     def prev(self) -> pd.Series:
         return self.df.iloc[-2]
 

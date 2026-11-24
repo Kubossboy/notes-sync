@@ -20,6 +20,7 @@ from app.data.providers.base import ProviderError
 from app.database.db import utcnow
 from app.scanners.scoring import (PENDING, build_plan, component_scores, cost_bps_per_side,
                                   liquidity_assessment, news_problems, total_score)
+from app.quant.engine import QuantEngine
 from app.sentiment.aggregate import combine as combine_sentiment
 from app.strategies.base import NoSetup, StrategyContext
 from app.strategies.crypto import CRYPTO_STRATEGIES, liquidity_alert
@@ -30,11 +31,13 @@ log = get_logger("scanner")
 
 
 class Scanner:
-    def __init__(self, settings: Settings, engine: MarketDataEngine, news=None):
+    def __init__(self, settings: Settings, engine: MarketDataEngine, news=None, quant=None):
         self.settings, self.engine, self.db = settings, engine, engine.db
         self.sc = settings.scanner
         self.news = news            # NewsEngine or None (news/sentiment components then unavailable)
+        self.quant = quant if quant is not None else QuantEngine(settings, self.db)   # backtest validation
         self._market_trend: str | None = None
+        self._bench_ret: float | None = None      # benchmark 20-bar return % (relative strength)
 
     # ------------------------------------------------------------------ public
     def run(self, asset_class: AssetClass, symbols: list[str] | None = None, mode: str = "live",
@@ -57,6 +60,7 @@ class Scanner:
                 self.db.log_error("news", e)
                 news_info = {"ingested": False, "error": f"{type(e).__name__}: {e}"}
             news_info = (news_info or {}) | {"health": self.news.health(now)}
+        self._bench_ret = None
         self._market_trend = self._benchmark_trend(asset_class, tf, now)
         results = []
         for sym in symbols:
@@ -167,9 +171,12 @@ class Scanner:
     def _finalize(self, setup, ctx, liq, fr, s, tf, mode, run_id) -> dict:
         plan = build_plan(setup, ctx, self.settings)
         comps = component_scores(ctx, liq, self.settings.news)
+        quant = self.quant.assess(ctx, setup, plan, self._bench_ret)
+        comps["quant"] = quant["score"]
         total, avail, on_avail = total_score(comps, self.settings)
-        problems = plan.problems + liq["problems"] + news_problems(ctx, setup)
+        problems = plan.problems + liq["problems"] + news_problems(ctx, setup) + quant["problems"]
         missing = [k for k, v in comps.items() if v is None]
+        pending = dict(PENDING, quant=quant["reason"])
         if problems:
             status = "rejected"
         elif missing:
@@ -181,7 +188,8 @@ class Scanner:
         data_ts = ctx.df.index[-1].isoformat()
         expires = ctx.df.index[-1] + timedelta(seconds=tf_seconds(tf) * (self.sc.signal_ttl_bars + 1))
         evidence = {**setup.evidence, "plan": asdict(plan), "components": comps,
-                    "missing_components": {k: PENDING.get(k, "unavailable") for k in missing},
+                    "missing_components": {k: pending.get(k, "unavailable") for k in missing},
+                    "quant": quant,
                     "liquidity": {k: v for k, v in liq.items() if k != "problems"},
                     "data_source": s.source, "crosscheck": fr.crosscheck.verdict if fr.crosscheck else None,
                     "confidence": confidence, "trend": ctx.last.get("trend"),
@@ -189,7 +197,8 @@ class Scanner:
                     "news": None if ctx.news is None else {k: ctx.news[k] for k in (
                         "aggregate", "events", "negative_high_verified", "positive_catalysts", "unexpected", "top")},
                     "sentiment": ctx.sentiment, "market_trend": self._market_trend,
-                    "note": "parameters are unvalidated hypotheses (validation in milestone 6)"}
+                    "note": ("strategy validated out-of-sample (still not a guarantee)" if quant["state"] == "validated"
+                             else "parameters are unvalidated hypotheses - not a reliable predictive edge")}
         sig = {"strategy": setup.strategy, "symbol": setup.symbol, "direction": setup.direction,
                "entry": round(plan.entry, 6), "stop": round(plan.stop, 6), "target": round(plan.target, 6),
                "rr_net": plan.reward_risk_net, "score": total, "score_on_available": on_avail,
@@ -219,8 +228,8 @@ class Scanner:
                     "ts": utcnow(), "signal_id": sid,
                     "decision": "reject" if status == "rejected" else "skip",
                     "reason": sig["reject_reason"] or (
-                        "incomplete score: " + ", ".join(missing) + "; execution engine arrives in milestone 5"
-                        if missing else "execution engine arrives in milestone 5")})
+                        "incomplete score: " + ", ".join(missing) + " - never executed"
+                        if missing else "complete signal - handed to the risk engine by the paper trader")})
             sig["persisted"], sig["signal_id"] = True, sid
         except sqlite3.IntegrityError as e:
             if "signal_key" in str(e) or "UNIQUE" in str(e):
@@ -238,6 +247,7 @@ class Scanner:
                 df = df[df["session"] == "regular"]
             if len(df) < 60:
                 return None
+            self._bench_ret = float(df["close"].iloc[-1] / df["close"].iloc[-21] - 1) * 100
             t = compute_all(df, ac)["trend"].iloc[-1]
             return t if isinstance(t, str) else None
         except Exception as e:

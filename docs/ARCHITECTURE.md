@@ -1,4 +1,4 @@
-# Architecture (Milestones 1-3)
+# Architecture (Milestones 1-6)
 
 ```
 CLI (app/main.py)
@@ -90,3 +90,17 @@ kill(reason, flatten) -> SAFE STATE + market-close every open paper position
 Idempotency: entry `client_order_id = atlas-entry-sig<signal_id>` (UNIQUE), exit
 `atlas-exit-pos<position_id>`; partial unique index = one open position per symbol;
 closed positions cannot be re-opened; fills immutable; audit tables append-only.
+
+## Backtesting & validation (Milestone 6)
+
+```
+history.load(source, symbol, tf, days)     Coinbase 15m / Alpaca IEX 5m / Yahoo 5m (60 d) -> var/history/*.csv.gz
+Backtester.prepare -> compute_all (causal)  stocks: regular session only
+Backtester.candidates                       bar i: live strategy fn on rows <= i (400-bar window) + build_plan gate
+Backtester.simulate                         next-open entry (CostModel.buy_fill), stop/target/EOD/max-hold exits,
+                                            size_position() shared with the risk engine, portfolio + loss limits
+validation.run_validation                   IS 60 % / OOS 40 %, walk-forward 6 blocks, loose/strict, cost x1.5,
+                                            diagnostic R:R>=1 run -> verdict -> backtest_runs / backtest_trades
+QuantEngine.assess (scanner._finalize)      failed -> 0 + rejected; unavailable -> None (incomplete);
+                                            validated -> 0-100 + expected value (OOS expectancy) in evidence
+```

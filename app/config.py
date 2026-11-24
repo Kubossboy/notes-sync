@@ -203,6 +203,23 @@ class NewsSection(_Strict):
     halt_if_all_sources_fail: Literal[True] = True
 
 
+class ValidationSection(_Strict):
+    """Milestone 6: backtest validation gates the quant score component (spec sections 10 and 14)."""
+    enabled: bool = True
+    history_days_crypto: int = Field(730, ge=60)
+    history_days_stock: int = Field(730, ge=60)
+    oos_fraction: float = Field(0.4, gt=0.1, lt=0.9)        # last 40 % of the period is out-of-sample
+    walk_forward_blocks: int = Field(6, ge=3, le=24)
+    wf_min_train_trades: int = Field(10, ge=1)
+    min_oos_trades: int = Field(30, ge=10)
+    min_profit_factor: float = Field(1.3, ge=1.0)           # spec section 14 target
+    max_drawdown_pct: float = Field(5.0, gt=0)              # spec section 14 target
+    min_wf_positive_fraction: float = Field(0.6, gt=0, le=1)
+    stress_cost_multiplier: float = Field(1.5, ge=1.0)
+    max_age_days: float = Field(30, gt=0)                   # older validation -> quant unavailable
+    auto_deploy_params: Literal[False] = False              # walk-forward winners are never auto-deployed
+
+
 class HttpSection(_Strict):
     timeout_seconds: float = Field(10, gt=0, le=60)
     user_agent: str = "ATLAS-Trading-AI/0.1"
@@ -258,6 +275,7 @@ class Settings(_Strict):
     data: DataSection = DataSection()
     scanner: ScannerSection = ScannerSection()
     news: NewsSection = NewsSection()
+    validation: ValidationSection = ValidationSection()
     http: HttpSection = HttpSection()
 
     def config_hash(self) -> str:

@@ -131,6 +131,22 @@ news:
   no_news_score: 40
   halt_if_all_sources_fail: true
 
+# Milestone 6: backtest / out-of-sample / walk-forward validation feeding the quant score component.
+validation:
+  enabled: true
+  history_days_crypto: 730        # Coinbase public 15m candles
+  history_days_stock: 730         # Alpaca IEX 5m bars (free feed, partial volume)
+  oos_fraction: 0.4               # first 60 % in-sample, last 40 % out-of-sample (by time)
+  walk_forward_blocks: 6          # expanding-window walk-forward, 5 test folds
+  wf_min_train_trades: 10
+  min_oos_trades: 30              # fewer -> insufficient_data (quant unavailable, never executed)
+  min_profit_factor: 1.3          # spec section 14
+  max_drawdown_pct: 5.0           # spec section 14
+  min_wf_positive_fraction: 0.6
+  stress_cost_multiplier: 1.5     # PF must stay > 1 with 50 % higher fees/slippage/spread
+  max_age_days: 30                # stale validation -> quant unavailable (incomplete)
+  auto_deploy_params: false       # walk-forward-selected parameters are reported, never deployed
+
 http:
   timeout_seconds: 10
   user_agent: "ATLAS-Trading-AI/0.1 (paper-trading research; contact: set ATLAS_CONTACT_EMAIL)"

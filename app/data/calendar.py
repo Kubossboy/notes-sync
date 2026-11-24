@@ -1,7 +1,7 @@
 """US equity market calendar (NYSE/Nasdaq) for regular, pre- and post-market sessions.
 
 Holidays/early closes are hard-coded from the published NYSE calendar for
-2025-2027. Outside that range `is_trading_day` raises, so the system cannot
+2024-2027 (2024 added in M6 for 2-year backtests). Outside that range `is_trading_day` raises, so the system cannot
 silently assume a session exists (fail closed).
 """
 from __future__ import annotations
@@ -12,6 +12,9 @@ from zoneinfo import ZoneInfo
 ET = ZoneInfo("America/New_York")
 
 NYSE_HOLIDAYS = {
+    # 2024
+    date(2024, 1, 1), date(2024, 1, 15), date(2024, 2, 19), date(2024, 3, 29), date(2024, 5, 27),
+    date(2024, 6, 19), date(2024, 7, 4), date(2024, 9, 2), date(2024, 11, 28), date(2024, 12, 25),
     # 2025
     date(2025, 1, 1), date(2025, 1, 9), date(2025, 1, 20), date(2025, 2, 17), date(2025, 4, 18),
     date(2025, 5, 26), date(2025, 6, 19), date(2025, 7, 4), date(2025, 9, 1), date(2025, 11, 27),
@@ -24,11 +27,12 @@ NYSE_HOLIDAYS = {
     date(2027, 6, 18), date(2027, 7, 5), date(2027, 9, 6), date(2027, 11, 25), date(2027, 12, 24),
 }
 EARLY_CLOSES = {  # 13:00 ET close
+    date(2024, 7, 3), date(2024, 11, 29), date(2024, 12, 24),
     date(2025, 7, 3), date(2025, 11, 28), date(2025, 12, 24),
     date(2026, 11, 27), date(2026, 12, 24),
     date(2027, 11, 26),
 }
-KNOWN_YEARS = {2025, 2026, 2027}
+KNOWN_YEARS = {2024, 2025, 2026, 2027}
 
 PRE_OPEN, REG_OPEN, REG_CLOSE, EARLY_CLOSE, POST_CLOSE = (
     time(4, 0), time(9, 30), time(16, 0), time(13, 0), time(20, 0))

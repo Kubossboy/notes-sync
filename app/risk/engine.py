@@ -26,6 +26,41 @@ log = get_logger("risk")
 
 
 @dataclass
+class Sizing:
+    qty: float
+    notional: float
+    planned_risk: float
+    budget: float
+    fees: float
+    rr_net: float | None
+    per_unit_loss: float
+    per_unit_gain: float
+
+
+def size_position(costs: CostModel, settings: Settings, ac: AssetClass, fill_price: float, stop: float,
+                  target: float, equity: float, cash: float, remaining_day: float) -> Sizing:
+    """Pure sizing function shared by the live risk engine and the backtester.
+    Loss at the stop includes entry fee, stop slippage and exit fee; gain at target includes both fees."""
+    r, ex = settings.risk, settings.execution
+    fee_b = costs.fee_bps(ac) / 1e4
+    stop_exit = stop * (1 - costs.slip(ac))
+    per_unit_loss = (fill_price - stop_exit) + fill_price * fee_b + stop_exit * fee_b
+    per_unit_gain = (target - fill_price) - fill_price * fee_b - target * fee_b
+    budget = equity * r.max_risk_per_trade_pct / 100
+    comm = 2 * ex.commission_per_trade_usd
+    eff_budget = max(0.0, min(budget, remaining_day) - comm)
+    qty_risk = eff_budget / per_unit_loss if per_unit_loss > 0 else 0.0
+    qty_pos = equity * r.max_position_pct_equity / 100 / fill_price
+    qty_cash = max(0.0, cash - comm) / (fill_price * (1 + fee_b))
+    qty = costs.round_qty(min(qty_risk, qty_pos, qty_cash), ac)
+    notional = qty * fill_price
+    planned = qty * per_unit_loss + comm
+    fees = costs.fee(notional, ac) + costs.fee(qty * target, ac)
+    rr = (qty * per_unit_gain - comm) / planned if planned > 0 else None
+    return Sizing(qty, notional, planned, budget, fees, rr, per_unit_loss, per_unit_gain)
+
+
+@dataclass
 class Proposal:
     signal_id: int | None
     symbol: str
@@ -181,21 +216,10 @@ class RiskEngine:
             add("no_chasing_entry_drift", drift <= self.r.max_entry_drift_r, round(drift, 3),
                 self.r.max_entry_drift_r, "R units between signal entry and expected fill")
             fee_b = self.costs.fee_bps(ac) / 1e4
-            stop_exit = p.stop * (1 - self.costs.slip(ac))           # expected stop fill
-            per_unit_loss = (fill.price - stop_exit) + fill.price * fee_b + stop_exit * fee_b
-            per_unit_gain = (p.target - fill.price) - fill.price * fee_b - p.target * fee_b
-            budget = st.equity * self.r.max_risk_per_trade_pct / 100
-            remaining_day = max(0.0, daily_limit - st.daily_loss)
-            comm = 2 * self.ex.commission_per_trade_usd
-            eff_budget = max(0.0, min(budget, remaining_day) - comm)
-            qty_risk = eff_budget / per_unit_loss if per_unit_loss > 0 else 0.0
-            qty_pos = st.equity * self.r.max_position_pct_equity / 100 / fill.price
-            qty_cash = max(0.0, st.cash - comm) / (fill.price * (1 + fee_b))      # no leverage / margin
-            qty = self.costs.round_qty(min(qty_risk, qty_pos, qty_cash), ac)
-            notional = qty * fill.price
-            planned = qty * per_unit_loss + comm
-            fees = self.costs.fee(notional, ac) + self.costs.fee(qty * p.target, ac)
-            rr = (qty * per_unit_gain - comm) / planned if planned > 0 else None
+            daily_rem = max(0.0, daily_limit - st.daily_loss)
+            z = size_position(self.costs, self.s, ac, fill.price, p.stop, p.target, st.equity, st.cash, daily_rem)
+            qty, notional, planned, budget, fees, rr = z.qty, z.notional, z.planned_risk, z.budget, z.fees, z.rr_net
+            remaining_day, comm = daily_rem, 2 * self.ex.commission_per_trade_usd
             add("position_size_positive", qty > 0, qty, None, "after rounding to lot step")
             add("min_notional", notional >= self.ex.min_notional_usd, round(notional, 4), self.ex.min_notional_usd)
             add("risk_within_limit", planned <= budget + 1e-9, round(planned, 4), round(budget, 4),
