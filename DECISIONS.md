@@ -93,3 +93,9 @@ Reversible technical decisions made during development. Newest last.
 - Account-balance chart from `equity_snapshots` + current equity, labelled SIMULATED; < 2 points shows an empty-state text, never an invented curve.
 - `#top` refreshes every 30 s via `/fragment/top` (details stay open). No new deps, no CDN; still read-only and localhost-only (`serve` refuses other hosts).
 - Demo of the 2-position split only via `scripts/dashboard_demo.py`: sqlite-backup of the real DB into `/tmp`, two positions with strategy `DEMO_news_momentum` built from real candles, red DEMO banner. The real DB/ledger is never written.
+
+## D84 - Public read-only snapshot on Cloudflare Pages
+- The engine and DB stay on the box. `python -m app.main export` renders a static snapshot (index.html, top.html, state.json) from the same read-only collector; every string is scrubbed (paths, e-mails, query URLs, token-like strings, values from .env / credential env vars) before rendering. No controls, no forms.
+- Unguessable location: random project name `atlas-<10 hex>` + random 24-char path slug, generated once into git-ignored `var/publish.json`; site root is a decoy "Not found". noindex via meta + `X-Robots-Tag` in `_headers`, robots.txt `Disallow: /`, no-referrer, no-store. This is obscurity, not access control - the snapshot contains only simulated paper-trading data.
+- Client refreshes top.html/state.json every 60 s and shows snapshot age (red when > 15 min).
+- `scripts/publish.sh` (export + `wrangler pages deploy`, needs CLOUDFLARE_API_TOKEN/ACCOUNT_ID in .env) is cron-able every 5 min; `scripts/publish_loop.sh` exists but is never auto-started.

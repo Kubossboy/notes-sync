@@ -30,6 +30,24 @@ setInterval(async () => {
 }, 30000);
 """
 
+# Static snapshot (Cloudflare Pages): re-fetch the sibling top.html + state.json, show snapshot age, warn when stale.
+STATIC_JS = """
+const upd = document.getElementById('upd');
+function age(ts){ const m = Math.round((Date.now() - Date.parse(ts)) / 60000);
+  upd.textContent = 'snapshot ' + new Date(ts).toLocaleString() + ' (' + m + ' min ago) · auto-refresh 60 s';
+  upd.className = m > 15 ? 'tag bad' : 'muted'; }
+age(document.body.dataset.gen);
+setInterval(async () => {
+  try {
+    const s = await fetch('state.json?t=' + Date.now(), {cache: 'no-store'});
+    const t = await fetch('top.html?t=' + Date.now(), {cache: 'no-store'});
+    if (s.ok && t.ok) { const st = await s.json(); document.getElementById('top').innerHTML = await t.text();
+      document.body.dataset.gen = st.generated_ts; }
+  } catch (e) {}
+  age(document.body.dataset.gen);
+}, 60000);
+"""
+
 CSS = """
 *{box-sizing:border-box}body{font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#0f1419;color:#d8dee6}
 header{padding:12px 20px;background:#151c24;border-bottom:1px solid #26313d;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
@@ -146,7 +164,7 @@ def render_top(d: dict) -> str:
     return _cards(d) + _position_panels(d) + _equity_panel(d)
 
 
-def render(d: dict, demo: bool = False) -> str:
+def render(d: dict, demo: bool = False, static: bool = False) -> str:
     o, sysd, fw = d["overview"], d["system"], d["forward_test"]
     safe = o["safe_state"]
     safe_html = (f'<span class="tag bad">SAFE STATE: {E(safe["reason"] or "")}</span>' if safe["halted"]
@@ -218,12 +236,18 @@ def render(d: dict, demo: bool = False) -> str:
                   for t, sub, c in details)
     demo_html = ('<div class="demo">DEMO - throwaway copy of the database with 2 clearly marked DEMO positions built '
                  'from real candles. Not the real ledger.</div>' if demo else "")
+    extra = ('<meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer">'
+             '<meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#151c24">'
+             if static else "")
+    snap = ('<div class="demo" style="background:#1e3a5f">READ-ONLY SNAPSHOT of the paper-trading box '
+            '(no controls; simulated money only)</div>' if static else "")
     return (f'<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-            f'<title>ATLAS Trading AI</title><style>{CSS}</style></head><body>{demo_html}<header><h1>ATLAS</h1>'
+            f'{extra}<title>ATLAS Trading AI</title><style>{CSS}</style></head>'
+            f'<body data-gen="{E(str(d["generated_ts"]))}">{demo_html}{snap}<header><h1>ATLAS</h1>'
             f'<span class="tag sim">PAPER ONLY · Alpaca orders {"ON" if o["alpaca_paper_orders_enabled"] else "OFF"}</span>'
             f'{safe_html}<span class="muted" id="upd">updated {_t(d["generated_ts"])} Prague · auto-refresh 30 s</span></header>'
             f'<main><div id="top">{render_top(d)}</div><h2 class="dh">Details</h2>{det}</main>'
-            f'<script>{JS}</script></body></html>')
+            f'<script>{STATIC_JS if static else JS}</script></body></html>')
 
 
 def make_handler(settings: Settings, db_path=None, live_prices: bool = True, demo: bool = False):

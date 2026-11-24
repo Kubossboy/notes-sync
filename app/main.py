@@ -94,6 +94,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("validation", help="latest validation verdict per strategy (feeds the quant score)")
     db_ = sub.add_parser("dashboard", help="local read-only web dashboard (http://127.0.0.1:8765)")
     db_.add_argument("--host", default="127.0.0.1"); db_.add_argument("--port", type=int, default=8765)
+    ex = sub.add_parser("export", help="static read-only dashboard snapshot for publishing (scrubbed)")
+    ex.add_argument("--out", default="var/site"); ex.add_argument("--no-live-prices", action="store_true")
     sub.add_parser("forwardtest", help="forward paper test stats (news-driven, internal ledger only)")
     sg = sub.add_parser("signals"); sg.add_argument("--limit", type=int, default=20)
     h = sub.add_parser("halt"); h.add_argument("reason", nargs="+")
@@ -276,6 +278,12 @@ def main(argv: list[str] | None = None) -> int:
                 pass
             finally:
                 srv.server_close()
+        elif a.cmd == "export":
+            from pathlib import Path
+            from app.dashboard.export import export, publish_config
+            cfg = publish_config(ctx.settings)
+            export(ctx.settings, Path(a.out), cfg["slug"], live_prices=not a.no_live_prices)
+            print(json.dumps({"out": a.out, "project": cfg["project"], "path": "/" + cfg["slug"] + "/"}))
         elif a.cmd == "forwardtest":
             from app.quant.engine import forward_test_stats
             v = ctx.settings.validation

@@ -1,0 +1,42 @@
+import json
+
+import pytest
+
+from app.database.db import Database
+
+from app.dashboard.export import RED, export, publish_config, scrub
+
+
+@pytest.fixture
+def dash_db(settings):
+    d = Database(settings.db_path)
+    d.migrate()
+    yield d
+
+
+def test_scrub_redacts_paths_emails_tokens_and_secrets():
+    s = scrub({"a": ["error at /workspace/x/var/atlas.sqlite3 line 3", "mail me@example.com",
+                     "tok abcdefABCDEF0123456789abcdefABCDEF01", "https://x.io/a?key=1", "hunter2secret"],
+               "n": 1.5}, secrets_=["hunter2secret"])
+    assert s["n"] == 1.5
+    assert all(RED in v for v in s["a"])
+    assert "/workspace" not in json.dumps(s) and "example.com" not in json.dumps(s)
+    assert scrub("DEMO_news_momentum BTC-USD 15m") == "DEMO_news_momentum BTC-USD 15m"
+
+
+def test_export_static_snapshot(settings, dash_db, tmp_path):
+    cfg = publish_config(settings)
+    assert cfg == publish_config(settings) and len(cfg["slug"]) >= 20 and cfg["project"].startswith("atlas-")
+    out = tmp_path / "site"
+    site = export(settings, out, cfg["slug"], settings.db_path, live_prices=False)
+    page = (site / "index.html").read_text()
+    assert 'name="robots" content="noindex' in page and "READ-ONLY SNAPSHOT" in page and "state.json" in page
+    assert "/fragment/top" not in page and "<form" not in page and "<button" not in page
+    assert "X-Robots-Tag: noindex" in (out / "_headers").read_text()
+    assert "Disallow: /" in (out / "robots.txt").read_text()
+    assert "Not found" in (out / "index.html").read_text()      # root reveals nothing
+    st = json.loads((site / "state.json").read_text())
+    assert set(st) >= {"generated_ts", "overview", "positions", "equity_curve"}
+    blob = "".join(p.read_text() for p in out.rglob("*") if p.is_file())
+    for bad in (str(tmp_path), "/workspace", "/home/", "sqlite3", ".secrets"):
+        assert bad not in blob

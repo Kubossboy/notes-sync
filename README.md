@@ -222,3 +222,10 @@ disable the related module (`needs_credentials`); everything else keeps working.
 
 Research software. Paper results are simulations with stated assumptions
 (fees, slippage) and are not evidence of future profitability.
+
+## Publishing a read-only snapshot (Cloudflare Pages, free)
+- Export only (no network deploy): `.venv/bin/python -m app.main export --out var/site` -> prints project + secret path.
+- Deploy once: put `CLOUDFLARE_API_TOKEN` (Pages:Edit) and `CLOUDFLARE_ACCOUNT_ID` in `.env`, then `scripts/publish.sh`.
+- Every 5 min via cron: `*/5 * * * * cd /workspace/atlas-trading-ai && scripts/publish.sh >> logs/publish.log 2>&1`
+  (or `scripts/publish_loop.sh`, stop with `touch var/STOP_PUBLISH`). Not started automatically.
+- URL: `https://<project>.pages.dev/<slug>/` (both in git-ignored `var/publish.json`). Scrubbed, noindex, no controls.
