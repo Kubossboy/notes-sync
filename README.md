@@ -9,7 +9,7 @@ market-intelligence and **paper-trading-only** platform for US stocks and crypto
 > database constraints (`execution_mode` must equal `'paper'`). Nothing here can
 > place a real-money order.
 
-Current phase: **Milestone 2 – Market data** (complete). See `PROJECT_STATUS.md`.
+Current phase: **Milestone 3 – Scanners and strategies** (complete). See `PROJECT_STATUS.md`.
 
 ## Quick start
 
@@ -37,6 +37,20 @@ still-forming bar is flagged `FORMING`, and only `live`, non-stale, valid data
 counts as *tradable*. Invalid data or a total data outage puts ATLAS into SAFE
 STATE (`status` shows the reason; `resume --by <name>` clears it).
 
+Scanners & signals (Milestone 3):
+
+```bash
+.venv/bin/python -m app.main scan                    # live scan: stocks (5m) + crypto (15m), signals journaled
+.venv/bin/python -m app.main scan --asset stock --research   # dry run on delayed data (market closed), nothing stored
+.venv/bin/python -m app.main signals                 # recent journaled signals with scores
+.venv/bin/python scripts/replay_signals.py BTC-USD NVDA      # how often each setup fired on recent real bars
+```
+
+Signals carry entry / stop / target, cost-aware net reward:risk, a 0-100 score
+and confidence. Until the news/sentiment (M4) and validation (M6) modules exist,
+signals are `incomplete` (max reachable score 55 < 60 = "do not trade") or
+`rejected` (R:R < 2 after costs, bad stop, poor liquidity). No orders exist yet (M5).
+
 Other commands: `python -m app.main halt <reason>` (enter SAFE STATE: no new
 simulated trades) and `python -m app.main resume --by <name>` (journaled).
 
@@ -51,7 +65,10 @@ app/
   integrations/      data-source registry + health probes
   data/              market data engine: models, providers (yahoo, coinbase, kraken, binance),
                      validation, freshness labels, cross-checks, NYSE calendar, reliability
-  scanners/ technical/ fundamentals/ intelligence/ sentiment/
+  technical/         indicators (VWAP, RSI, MACD, EMA 9/20/50, SMA 200, ATR, RVOL, Bollinger,
+                     S/R, volume profile, breakouts, trend, candlestick patterns)
+  strategies/        stock.py (7) and crypto.py (7) strategy modules
+  scanners/          scanner (data -> indicators -> strategies -> scored signals) + scoring technical/ fundamentals/ intelligence/ sentiment/
   quant/ risk/ execution/ portfolio/ analytics/ dashboard/   (later milestones)
 config/default.yaml  all non-secret settings
 .env.example         optional credentials (copy to .env, never commit)
@@ -72,7 +89,8 @@ logs/  var/          runtime logs and the SQLite database (git-ignored)
 | SEC EDGAR (submissions, 8-K, Form 4) | filings, insider disclosures | no (contact e-mail in User-Agent) |
 | Federal Reserve RSS | FOMC / macro | no |
 | MarketWatch, CoinDesk RSS | headlines | no |
-| Alpaca paper | paper broker (optional) | **needs free account + keys** |
+| Alpaca market data (IEX feed) | 2nd stock source, bid/ask | keys set via env (paper account) |
+| Alpaca paper | paper account (execution in M5) | keys set via env |
 | X API v2 | social sentiment | **needs credentials (paid tier for search)** |
 
 ## Credentials

@@ -121,7 +121,7 @@ class MarketsSection(_Strict):
 
 
 class DataSection(_Strict):
-    stock_sources: list[Literal["yahoo"]] = ["yahoo"]
+    stock_sources: list[Literal["yahoo", "alpaca"]] = ["yahoo", "alpaca"]
     crypto_sources: list[Literal["coinbase", "kraken", "binance"]] = ["coinbase", "kraken", "binance"]
     include_prepost: bool = True
     live_max_age_bars: float = Field(2.0, gt=0)      # last complete bar closed <= N bars ago -> live
@@ -131,7 +131,8 @@ class DataSection(_Strict):
     crosscheck_tolerance_bps_stock: float = Field(100, gt=0)
     crosscheck_halt_bps: float = Field(300, gt=0)    # sources disagree this much -> SAFE STATE
     max_bar_change_pct: float = Field(20, gt=0)      # single-bar move above this -> warning
-    min_sources_crypto: int = Field(2, ge=1)         # consensus needs this many agreeing sources
+    min_sources_crypto: int = Field(2, ge=1)
+    max_quote_spread_bps: float = Field(200, gt=0)   # wider quotes (e.g. IEX after hours) excluded from consensus         # consensus needs this many agreeing sources
     halt_on_invalid_data: Literal[True] = True       # spec section 15: invalid data -> safe state
 
     @model_validator(mode="after")
@@ -144,6 +145,24 @@ class DataSection(_Strict):
                                            self.crosscheck_tolerance_bps_stock):
             raise ValueError("crosscheck_halt_bps must exceed the tolerances")
         return self
+
+
+class StrategyToggle(_Strict):
+    enabled: bool = True
+    params: dict[str, float] = {}
+
+
+class ScannerSection(_Strict):
+    stock_timeframe: Literal["1m", "5m", "15m", "1h"] = "5m"
+    crypto_timeframe: Literal["1m", "5m", "15m", "1h"] = "15m"
+    lookback_bars: int = Field(400, ge=60, le=1000)
+    signal_ttl_bars: int = Field(3, ge=1)
+    stock_min_avg_dollar_volume: float = Field(2_000_000, ge=0)   # per bar, last 20 regular bars
+    stock_min_price: float = Field(5.0, gt=0)
+    crypto_max_spread_bps: float = Field(10.0, gt=0)
+    crypto_min_depth_usd_05: float = Field(50_000, ge=0)        # each side within 0.5% of mid
+    stock_strategies: dict[str, StrategyToggle] = {}
+    crypto_strategies: dict[str, StrategyToggle] = {}
 
 
 class HttpSection(_Strict):
@@ -199,6 +218,7 @@ class Settings(_Strict):
     scoring: ScoringSection = ScoringSection()
     markets: MarketsSection = MarketsSection()
     data: DataSection = DataSection()
+    scanner: ScannerSection = ScannerSection()
     http: HttpSection = HttpSection()
 
     def config_hash(self) -> str:

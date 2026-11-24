@@ -94,8 +94,18 @@ def _v_rss(r):
 
 
 def _v_alpaca(r):
+    """Paper account check. Account number / ids are deliberately not reported."""
     j = r.json()
-    return "is_open" in j, f"market is_open={j.get('is_open')}", {"is_open": j.get("is_open")}
+    ok = j.get("status") == "ACTIVE" and "equity" in j
+    return ok, (f"paper account status={j.get('status')} equity={j.get('equity')} "
+                f"currency={j.get('currency')} trading_blocked={j.get('trading_blocked')}"), {
+        "status": j.get("status"), "equity": j.get("equity")}
+
+
+def _v_alpaca_data(r):
+    j = r.json()
+    b = j.get("bar") or {}
+    return bool(b.get("c")), f"SPY latest IEX bar c={b.get('c')} t={b.get('t')}", {"close": b.get("c"), "t": b.get("t")}
 
 
 def _v_x(r):
@@ -152,9 +162,13 @@ INTEGRATIONS: list[Integration] = [
                 "https://www.coindesk.com/arc/outboundfeeds/rss/", _v_rss,
                 notes="Crypto news headlines."),
     Integration("alpaca_paper", "execution",
-                "https://paper-api.alpaca.markets/v2/clock", _v_alpaca,
+                "https://paper-api.alpaca.markets/v2/account", _v_alpaca,
                 requires=("alpaca_api_key_id", "alpaca_api_secret_key"), headers=_alpaca_headers,
-                notes="Free paper account; needs sign-up + API keys. PAPER endpoint only."),
+                notes="Free paper account. PAPER endpoint only; live api.alpaca.markets is blocked in code."),
+    Integration("alpaca_market_data", "market_data_stock",
+                "https://data.alpaca.markets/v2/stocks/SPY/bars/latest?feed=iex", _v_alpaca_data,
+                requires=("alpaca_api_key_id", "alpaca_api_secret_key"), headers=_alpaca_headers,
+                notes="Read-only market data, free IEX feed (IEX volume is a fraction of consolidated volume)."),
     Integration("x_api_v2", "social",
                 "https://api.x.com/2/tweets/search/recent?query=%24SPY&max_results=10", _v_x,
                 requires=("x_bearer_token",), headers=_x_headers, free=False,

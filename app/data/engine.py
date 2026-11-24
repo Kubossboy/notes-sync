@@ -21,6 +21,8 @@ from app.core.logging_setup import get_logger
 from app.core.safety import SafeState
 from app.data.crosscheck import CrossCheck, cross_check
 from app.data.models import AssetClass, Candle, CandleSeries, DataStatus, Quote, utc
+from app.config import Secrets
+from app.data.providers.alpaca import AlpacaCredentialsMissing, AlpacaDataProvider
 from app.data.providers.base import BaseProvider, DataFormatError, ProviderError, SymbolNotSupported
 from app.data.providers.crypto import BinanceProvider, CoinbaseProvider, KrakenProvider
 from app.data.providers.yahoo import YahooProvider
@@ -56,15 +58,23 @@ class FetchResult:
 class MarketDataEngine:
     def __init__(self, settings: Settings, db: Database, safe_state: SafeState,
                  providers: dict[str, BaseProvider] | None = None,
-                 session: requests.Session | None = None):
+                 session: requests.Session | None = None, secrets: Secrets | None = None):
         self.settings, self.db, self.safe = settings, db, safe_state
         self.cfg = settings.data
         sess = session or requests.Session()
+        self.disabled: dict[str, str] = {}
         if providers is None:
             providers = {}
             for name in set(self.cfg.stock_sources) | set(self.cfg.crypto_sources):
+                t = settings.http.timeout_seconds
+                if name == "alpaca":
+                    try:
+                        providers[name] = AlpacaDataProvider(secrets or Secrets(), session=sess, timeout=t)
+                    except AlpacaCredentialsMissing as e:
+                        self.disabled[name] = f"needs_credentials: {e}"
+                    continue
                 kw = {"include_prepost": self.cfg.include_prepost} if name == "yahoo" else {}
-                providers[name] = PROVIDER_CLASSES[name](session=sess, timeout=settings.http.timeout_seconds, **kw)
+                providers[name] = PROVIDER_CLASSES[name](session=sess, timeout=t, **kw)
         self.providers = providers
 
     def sources_for(self, ac: AssetClass) -> list[str]:
@@ -191,7 +201,13 @@ class MarketDataEngine:
             quotes.append(q)
             attempts.append(SourceAttempt(name, True))
             self._persist_quote(q)
-        cc = cross_check(symbol, ac, {q.source: q.price for q in quotes}, self.cfg, kind="quote")
+        usable = {q.source: q.price for q in quotes
+                  if q.spread_bps is None or q.spread_bps <= self.cfg.max_quote_spread_bps}
+        for q in quotes:
+            if q.source not in usable:
+                self.db.log_event("quote_too_wide", f"data.{q.source}",
+                                  f"{symbol} spread {q.spread_bps:.0f} bps excluded from consensus", "warning")
+        cc = cross_check(symbol, ac, usable, self.cfg, kind="quote")
         self._store_crosscheck(cc)
         if cc.verdict == "divergent":
             self._halt(f"quote divergence on {symbol}: {cc.deviations_bps}")

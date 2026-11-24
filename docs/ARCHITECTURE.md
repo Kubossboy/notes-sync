@@ -1,4 +1,4 @@
-# Architecture (Milestones 1-2)
+# Architecture (Milestones 1-3)
 
 ```
 CLI (app/main.py)
@@ -34,4 +34,16 @@ validation.label_freshness    live | delayed | cached | unavailable, stale, mark
 crosscheck.cross_check        median consensus, outliers, divergent
 engine.MarketDataEngine       priority + fallback, cache, persistence, safe-state policy
    tables: market_observations (kind=candle|quote), crosscheck_results (append-only)
+```
+
+## Scanners & strategies (Milestone 3)
+
+```
+MarketDataEngine.get_candles (live, valid)        crypto: + L2 order book snapshot
+  -> technical.indicators.compute_all (complete bars only, causal)
+  -> support_resistance (confirmed pivots only)
+  -> strategies.stock / strategies.crypto  (Setup or NoSetup(reason))
+  -> scanners.scoring.build_plan (stop sanity, 2.5R target capped by resistance, net R:R after costs)
+  -> component scores (technical, momentum/volume, liquidity; news/sentiment/quant pending)
+  -> journal: signals, signal_scores, strategy_decisions, scan_runs, orderbook_snapshots
 ```

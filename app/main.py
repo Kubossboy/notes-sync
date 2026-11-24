@@ -9,6 +9,8 @@ Usage:  python -m app.main <command>
   quote SYM    cross-checked quote from every source
   collect      candles + quotes for the whole watchlist (or --symbols ...)
   reliability  repeated fetches per source: success rate and latency
+  scan         run stock + crypto scanners (--asset stock|crypto|all, --research for delayed data dry-run)
+  signals      list recent journaled signals
   halt REASON put the system into SAFE STATE (no new simulated trades)
   resume      clear SAFE STATE (explicit human action, journaled)
 """
@@ -65,6 +67,10 @@ def main(argv: list[str] | None = None) -> int:
     co = sub.add_parser("collect"); co.add_argument("--symbols", nargs="*"); co.add_argument("--tf", default="5m")
     rl = sub.add_parser("reliability"); rl.add_argument("--symbols", nargs="*")
     rl.add_argument("--rounds", type=int, default=3); rl.add_argument("--tf", default="5m")
+    sc = sub.add_parser("scan"); sc.add_argument("--asset", choices=["stock", "crypto", "all"], default="all")
+    sc.add_argument("--symbols", nargs="*"); sc.add_argument("--research", action="store_true")
+    sc.add_argument("--json", action="store_true")
+    sg = sub.add_parser("signals"); sg.add_argument("--limit", type=int, default=20)
     h = sub.add_parser("halt"); h.add_argument("reason", nargs="+")
     r = sub.add_parser("resume"); r.add_argument("--by", default="operator"); r.add_argument("--note", default="")
     a = p.parse_args(argv)
@@ -88,9 +94,50 @@ def main(argv: list[str] | None = None) -> int:
             print(f"\n{ok}/{len(res)} integrations ok")
             return 1 if essential_down and len(essential_down) == sum(
                 x.category.startswith("market_data") for x in res) else 0
+        elif a.cmd == "scan":
+            from app.data.engine import MarketDataEngine
+            from app.data.models import AssetClass
+            from app.scanners.scanner import Scanner
+            eng = MarketDataEngine(ctx.settings, ctx.db, ctx.safe_state, secrets=ctx.secrets)
+            scn = Scanner(ctx.settings, eng)
+            kinds = [AssetClass.STOCK, AssetClass.CRYPTO] if a.asset == "all" else [AssetClass(a.asset)]
+            mode = "research" if a.research else "live"
+            for k in kinds:
+                syms = [x for x in (a.symbols or []) if (x.upper().endswith("-USD")) == (k == AssetClass.CRYPTO)] or None
+                if a.symbols and not syms:
+                    continue
+                rep = scn.run(k, syms, mode)
+                if a.json:
+                    print(json.dumps(rep, indent=1, default=str)); continue
+                print(f"== {k.value} scan run={rep['run_id']} mode={mode} tf={rep['timeframe']} "
+                      f"signals={rep['signals']} halted={rep['safe_state_halted']}")
+                for r in rep["symbols"]:
+                    if "skipped" in r:
+                        print(f"  {r['symbol']:8} skipped: {r['skipped']} [{r.get('data_status')}]")
+                        continue
+                    ind = r["indicators"]
+                    print(f"  {r['symbol']:8} {r['data_status']:8} last={r['last_bar']} close={ind['close']} "
+                          f"rsi={ind['rsi14']} trend={r['trend']} liq={r['liquidity'].get('score') and round(r['liquidity']['score'])} "
+                          f"{'ALERT ' + r['liquidity_alert'] if r.get('liquidity_alert') else ''}")
+                    for sg_ in r["signals"]:
+                        print(f"     SIGNAL {sg_['strategy']:24} {sg_['status']:10} entry={sg_['entry']} stop={sg_['stop']} "
+                              f"target={sg_['target']} rr_net={sg_['rr_net']} score={sg_['score']} "
+                              f"(on available {sg_['score_on_available']}) conf={sg_['confidence']}"
+                              + (f" reason={sg_['reject_reason']}" if sg_['reject_reason'] else ""))
+                    for n, why in r["no_setup"].items():
+                        print(f"     -      {n:24} {why}")
+            st = ctx.safe_state.status()
+            print(f"SAFE STATE: {'HALTED - ' + st.reason if st.halted else 'normal'}")
+        elif a.cmd == "signals":
+            rows = ctx.db.conn.execute(
+                "SELECT s.id, s.ts, s.symbol, s.strategy, s.status, s.entry_price, s.stop_loss, s.take_profit, "
+                "s.reward_risk, sc.total_score, sc.score_on_available, s.reject_reason FROM signals s "
+                "LEFT JOIN signal_scores sc ON sc.signal_id = s.id ORDER BY s.id DESC LIMIT ?", (a.limit,)).fetchall()
+            for r in rows:
+                print(dict(r))
         elif a.cmd in ("candles", "quote", "collect", "reliability"):
             from app.data.engine import MarketDataEngine
-            eng = MarketDataEngine(ctx.settings, ctx.db, ctx.safe_state)
+            eng = MarketDataEngine(ctx.settings, ctx.db, ctx.safe_state, secrets=ctx.secrets)
             wl = a.symbols if getattr(a, "symbols", None) else (
                 ctx.settings.markets.stocks.watchlist + ctx.settings.markets.crypto.watchlist)
             if a.cmd == "candles":

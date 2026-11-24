@@ -54,7 +54,8 @@ class BaseProvider(ABC):
                 self._last = time.monotonic()
             try:
                 r = self.session.get(url, params=params, timeout=self.timeout,
-                                     headers={"User-Agent": self.user_agent, "Accept": "application/json"})
+                                     headers={"User-Agent": self.user_agent, "Accept": "application/json",
+                                              **self.auth_headers()})
             except requests.RequestException as e:
                 last_exc = ProviderError(f"{self.name}: {type(e).__name__}: {str(e)[:160]}")
             else:
@@ -71,6 +72,10 @@ class BaseProvider(ABC):
             if attempt < self.retries:
                 time.sleep(self.backoff_s * (2 ** attempt))
         raise last_exc or ProviderError(f"{self.name}: unknown failure")
+
+    def auth_headers(self) -> dict:
+        """Override for providers that need credentials (values never logged)."""
+        return {}
 
     # ---- API ----
     @abstractmethod

@@ -70,7 +70,7 @@ def test_failures_are_reported_not_hidden(settings, resp, exc, expected):
 def test_secret_headers_used_only_when_present(settings):
     alp = next(i for i in INTEGRATIONS if i.name == "alpaca_paper")
     sec = Secrets(alpaca_api_key_id="PKX", alpaca_api_secret_key="SKX")
-    sess = FakeSession(FakeResp(200, {"is_open": False}))
+    sess = FakeSession(FakeResp(200, {"status": "ACTIVE", "equity": "1000", "currency": "USD"}))
     r = probe(alp, settings, sec, sess)
     assert r.status == "ok"
     url, headers = sess.calls[0]
@@ -94,7 +94,7 @@ def test_live_free_sources_reachable(settings, db):
     # at least one stock and one crypto source must work for later milestones
     assert by["yahoo_finance_chart"].status == "ok", failed
     assert any(by[n].status == "ok" for n in ("binance_public", "coinbase_exchange_public", "kraken_public"))
-    assert by["alpaca_paper"].status == "needs_credentials"
+    assert by["alpaca_paper"].status == "needs_credentials"   # probed with empty Secrets() here
     assert db.conn.execute("SELECT COUNT(*) FROM integration_health").fetchone()[0] == len(res)
     if failed:
         pytest.skip(f"some optional sources degraded: {failed}")
