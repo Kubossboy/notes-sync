@@ -94,6 +94,10 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("validation", help="latest validation verdict per strategy (feeds the quant score)")
     db_ = sub.add_parser("dashboard", help="local read-only web dashboard (http://127.0.0.1:8765)")
     db_.add_argument("--host", default="127.0.0.1"); db_.add_argument("--port", type=int, default=8765)
+    tm = sub.add_parser("trade-manual", help="owner-requested MANUAL paper trade (strategy manual_news); hard risk limits still apply")
+    tm.add_argument("symbol"); tm.add_argument("--stop", type=float, required=True); tm.add_argument("--target", type=float, required=True)
+    tm.add_argument("--news-id", type=int, required=True, help="news_events.id that motivates the trade")
+    tm.add_argument("--note", default=""); tm.add_argument("--dry-run", action="store_true")
     ex = sub.add_parser("export", help="static read-only dashboard snapshot for publishing (scrubbed)")
     ex.add_argument("--out", default="var/site"); ex.add_argument("--no-live-prices", action="store_true")
     sub.add_parser("forwardtest", help="forward paper test stats (news-driven, internal ledger only)")
@@ -278,6 +282,15 @@ def main(argv: list[str] | None = None) -> int:
                 pass
             finally:
                 srv.server_close()
+        elif a.cmd == "trade-manual":
+            from app.execution.alpaca_paper import AlpacaPaperBroker
+            from app.execution.manual import manual_trade
+            from app.execution.trader import PaperTrader
+            from app.data.engine import MarketDataEngine
+            eng = MarketDataEngine(ctx.settings, ctx.db, ctx.safe_state, secrets=ctx.secrets)
+            trader = PaperTrader(ctx.settings, ctx.db, ctx.safe_state, eng, None, AlpacaPaperBroker(ctx.settings, ctx.secrets))
+            print(json.dumps(manual_trade(trader, a.symbol, a.stop, a.target, a.news_id, a.note, dry_run=a.dry_run),
+                             indent=1, default=str))
         elif a.cmd == "export":
             from pathlib import Path
             from app.dashboard.export import export, publish_config

@@ -122,6 +122,12 @@ class RiskDecision:
         return [c for c in self.checks if not c.passed]
 
 
+# Soft filters the OWNER may waive for an explicit manual trade (trade-manual). Hard limits - risk per
+# trade, daily stop, max positions, no leverage, stop/target validity, net R:R >= 2, safe state, paper mode,
+# quote quality, sessions - are never waivable.
+MANUAL_WAIVABLE = frozenset({"strategy_validated_or_forward_test", "score_threshold"})
+
+
 class RiskEngine:
     def __init__(self, settings: Settings, db: Database, safe: SafeState, ledger: Ledger | None = None):
         self.s, self.db, self.safe = settings, db, safe
@@ -131,12 +137,15 @@ class RiskEngine:
 
     # ------------------------------------------------------------------ public
     def evaluate(self, p: Proposal, q: MarketQuote | None, now: datetime | None = None,
-                 marks: dict[str, float] | None = None) -> RiskDecision:
+                 marks: dict[str, float] | None = None, waive: frozenset = frozenset()) -> RiskDecision:
         now = now or datetime.now(timezone.utc)
         eid = uuid.uuid4().hex[:16]
+        bad = set(waive) - MANUAL_WAIVABLE
+        if bad:
+            raise ValueError(f"not waivable (hard limits): {sorted(bad)}")
         try:
             st = self.ledger.state(now, marks)
-            d = self._evaluate(eid, p, q, now, st)
+            d = self._evaluate(eid, p, q, now, st, frozenset(waive))
         except Exception as e:                     # risk engine failure -> fail closed
             self.db.log_error("risk", e)
             self.safe.halt(f"risk engine failure: {type(e).__name__}: {e}", module="risk")
@@ -148,9 +157,14 @@ class RiskEngine:
 
     # ------------------------------------------------------------------ rules
     def _evaluate(self, eid: str, p: Proposal, q: MarketQuote | None, now: datetime,
-                  st: PortfolioState) -> RiskDecision:
+                  st: PortfolioState, waive: frozenset = frozenset()) -> RiskDecision:
         C: list[Check] = []
-        add = lambda name, ok, value=None, limit=None, detail="": C.append(Check(name, bool(ok), value, limit, detail))  # noqa: E731
+
+        def add(name, ok, value=None, limit=None, detail=""):
+            if not ok and name in waive and name in MANUAL_WAIVABLE:
+                C.append(Check(name, True, value, limit, f"WAIVED by owner (manual trade): {detail}"))
+            else:
+                C.append(Check(name, bool(ok), value, limit, detail))
         ac = p.asset_class
 
         add("safe_state_normal", self.safe.trading_allowed(), detail=self.safe.status().reason or "")

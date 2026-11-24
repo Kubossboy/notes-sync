@@ -236,5 +236,6 @@ Research software. Paper results are simulations with stated assumptions
 - URL: `https://<project>.pages.dev/<slug>/` (both in git-ignored `var/publish.json`). Scrubbed, noindex, no controls.
 
 ## Alpaca PAPER mirror (D85)
+Manual owner trades: `python -m app.main trade-manual SYMBOL --stop X --target Y --news-id N --dry-run` (D87).
 `execution.alpaca_paper_orders_enabled: true` - internal trades (incl. forward_test) are mirrored to paper-api.alpaca.markets with the
 qty sized from the ATLAS $1,000 ledger. The internal ledger stays authoritative. Live trading is blocked in code.

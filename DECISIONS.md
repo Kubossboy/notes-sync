@@ -118,3 +118,13 @@ Reversible technical decisions made during development. Newest last.
   `docs/CHATGPT_PROMPT.md` states honestly that a chat sandbox can't run the 24/7 loop.
 - Launchers `start.sh` / `start.ps1` / `start.bat` / `Makefile`; `scripts/run_loop.py` is the cross-platform loop (same
   STOP-file/pid semantics as run_loop.sh). `tzdata` is added for Windows (zoneinfo). `.gitattributes` pins line endings.
+
+## D87 - Owner-requested manual paper trade (`trade-manual`)
+- `python -m app.main trade-manual SYMBOL --stop X --target Y --news-id N [--dry-run]`: only on the owner's explicit request,
+  must cite a real `news_events` row. Strategy `manual_news`, validation_status `manual` -> excluded from forward-test stats.
+- The normal risk engine runs with ONLY `MANUAL_WAIVABLE` = {strategy_validated_or_forward_test, score_threshold} waived
+  (journaled as "WAIVED by owner"); asking to waive anything else raises. All hard limits still apply ($2.50 risk, $10 daily
+  stop, 2 positions, no leverage, net R:R >= 2 after costs, quote quality, sessions, SAFE STATE). Mirrored per D85; the
+  position is then managed by the regular loop.
+- First use 2026-11-24 11:44 Prague: BTC-USD long on the CFTC staff advisory (crypto assets may count toward financial
+  resources requirements, cftc.gov press release 9331-26, primary source).
