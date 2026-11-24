@@ -58,9 +58,9 @@ class ExecutionSection(_Strict):
     allow_short: bool = False
     commission_per_trade_usd: float = Field(0.0, ge=0)
     stock_fee_bps: float = Field(0.0, ge=0)
-    crypto_fee_bps: float = Field(25.0, ge=0)  # Alpaca tier 1 taker; yaml may override
+    crypto_fee_bps: float = Field(5.5, ge=0)   # Bybit USDT-perp taker; yaml may override
     slippage_bps_stock: float = Field(5.0, ge=0)
-    slippage_bps_crypto: float = Field(10.0, ge=0)
+    slippage_bps_crypto: float = Field(3.0, ge=0)
     # --- paper simulator (milestone 5)
     fractional_stocks: bool = True                  # fractional shares (Alpaca supports them); False -> whole shares
     stock_qty_step: float = Field(0.001, gt=0)

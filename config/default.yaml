@@ -19,9 +19,9 @@ execution:
   allow_short: false
   commission_per_trade_usd: 0.0
   stock_fee_bps: 0.0
-  crypto_fee_bps: 25.0     # Alpaca crypto tier 1 taker (0.25% per side). Maker is 0.15%. Applied to full notional.
+  crypto_fee_bps: 5.5      # Bybit USDT-perp taker, per side on full notional (entries/stops are market).
   slippage_bps_stock: 5.0
-  slippage_bps_crypto: 10.0
+  slippage_bps_crypto: 3.0      # BTC/ETH-class liquidity (global; not per-symbol)
   fractional_stocks: true
   stock_qty_step: 0.001
   crypto_qty_step: 0.000001

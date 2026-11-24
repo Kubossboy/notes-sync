@@ -66,7 +66,8 @@ def test_position_sizing_respects_quarter_percent_risk(env):
     fill = d.expected_fill
     assert fill > 100.01                                            # ask + slippage
     fee = env.s.execution.crypto_fee_bps / 1e4
-    per_unit = (fill - 99 * (1 - 0.001)) + fill * fee + 99 * 0.999 * fee
+    slip = env.s.execution.slippage_bps_crypto / 1e4
+    per_unit = (fill - 99 * (1 - slip)) + fill * fee + 99 * (1 - slip) * fee
     assert d.quantity == pytest.approx(2.5 / per_unit, abs=1e-5)
     assert d.notional <= 500 + 1e-6 and d.rr_net >= 2.0
     rows = env.db.conn.execute("SELECT COUNT(*) FROM risk_checks WHERE evaluation_id=?", (d.evaluation_id,)).fetchone()[0]
@@ -191,7 +192,7 @@ def test_stop_loss_exit_loses_about_planned_risk(env):
             bar(NOW + timedelta(minutes=2), 99.6, 99.7, 98.9, 99.0, complete=False)]   # forming bar counts
     r = env.sim.manage_position(pos, bars, NOW + timedelta(minutes=2, seconds=30))
     assert r["reason"] == "stop_loss"
-    assert r["exit_price"] == pytest.approx(99 * (1 - 0.001))
+    assert r["exit_price"] == pytest.approx(99 * (1 - env.s.execution.slippage_bps_crypto / 1e4))
     assert r["pnl"] == pytest.approx(-d.planned_risk_usd, rel=0.02)    # loss ≈ planned risk incl. costs
     assert r["r_multiple"] == pytest.approx(-1, abs=0.03)
 
@@ -199,7 +200,8 @@ def test_stop_loss_exit_loses_about_planned_risk(env):
 def test_gap_through_stop_fills_at_open(env):
     pos, d = open_btc(env)
     r = env.sim.manage_position(pos, [bar(NOW + timedelta(minutes=1), 97, 97.5, 96.5, 97)], NOW + timedelta(minutes=2))
-    assert r["exit_price"] == pytest.approx(97 * 0.999) and r["pnl"] < -d.planned_risk_usd   # gap risk is real
+    slip = env.s.execution.slippage_bps_crypto / 1e4
+    assert r["exit_price"] == pytest.approx(97 * (1 - slip)) and r["pnl"] < -d.planned_risk_usd   # gap risk is real
 
 
 def test_take_profit_and_same_bar_conflict(env):
