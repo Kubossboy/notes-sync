@@ -26,7 +26,8 @@ from app.data.providers.alpaca import AlpacaCredentialsMissing, AlpacaDataProvid
 from app.data.providers.base import BaseProvider, DataFormatError, ProviderError, SymbolNotSupported
 from app.data.providers.crypto import BinanceProvider, CoinbaseProvider, KrakenProvider
 from app.data.providers.yahoo import YahooProvider
-from app.data.validation import label_freshness, validate_candles
+from app.data.validation import (as_of_lagged_behind_clock, as_utc, effective_as_of,
+                                 label_freshness, retag_completeness, validate_candles, wall_clock)
 from app.database.db import Database, utcnow
 
 log = get_logger("data.engine")
@@ -117,9 +118,16 @@ class MarketDataEngine:
 
     def _fetch_one(self, name, symbol, ac, timeframe, limit, attempts, now) -> CandleSeries | None:
         prov = self.providers[name]
-        fetched_at = datetime.now(timezone.utc)
+        fetched_at = wall_clock()          # always a fresh UTC clock; never reuse a cycle-start now
+        asof = as_utc(now) if now is not None else fetched_at
         try:
-            candles = prov.fetch_candles(symbol, timeframe, limit, now=now)
+            candles = prov.fetch_candles(symbol, timeframe, limit, now=asof)
+            # After VM sleep or a long cycle the caller may pass a stale as-of. Re-tag
+            # completeness against the wall clock so already-closed bars are not left
+            # "forming" in the middle of the series (which would halt as invalid).
+            if candles and as_of_lagged_behind_clock(asof, fetched_at, candles):
+                asof = fetched_at
+                candles = retag_completeness(candles, timeframe, asof)
         except SymbolNotSupported as e:
             attempts.append(SourceAttempt(name, False, str(e), "unsupported"))
             return None
@@ -133,7 +141,7 @@ class MarketDataEngine:
             self.db.log_event("source_unreachable", f"data.{name}", f"{symbol}: {e}", "warning")
             return None
         series = CandleSeries(symbol, ac, name, timeframe, candles, fetched_at)
-        issues, warns = validate_candles(candles, timeframe, ac, self.cfg, now)
+        issues, warns = validate_candles(candles, timeframe, ac, self.cfg, asof, clock=fetched_at)
         if getattr(prov, "last_skipped_nulls", 0):
             warns.append(f"{prov.last_skipped_nulls} null bar(s) skipped")
         series.issues, series.warnings = issues, warns
@@ -145,7 +153,7 @@ class MarketDataEngine:
                 return None   # empty answer = missing data, handled by fallback/all-failed path
             self._halt(f"invalid candles from {name} for {symbol}: {issues[0]}")
             return None
-        label_freshness(series, self.cfg, now)
+        label_freshness(series, self.cfg, asof, clock=fetched_at)
         self.persist_candles(series)
         attempts.append(SourceAttempt(name, True))
         return series
@@ -168,7 +176,8 @@ class MarketDataEngine:
         cached = self.load_cached(symbol, timeframe, limit)
         series = CandleSeries(symbol, ac, cached[0].source if cached else "none", timeframe, cached,
                               datetime.now(timezone.utc))
-        label_freshness(series, self.cfg, now, from_cache=bool(cached))
+        label_freshness(series, self.cfg, now if now is not None else wall_clock(),
+                        from_cache=bool(cached), clock=wall_clock())
         series.warnings.append("all sources failed: " + "; ".join(
             f"{a.source}={a.kind}" for a in attempts) if attempts else "no sources configured")
         only_unsupported = attempts and all(a.kind == "unsupported" for a in attempts)

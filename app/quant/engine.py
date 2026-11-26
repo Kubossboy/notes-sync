@@ -91,6 +91,15 @@ class QuantEngine:
                                   f"{ws['profit_factor']}, expectancy {ws['expectancy_r']} R) - backtest said: {st['reason'][:120]}",
                            problems=[], evidence={"shadow": ws, "note": "neutral quant score; still under all M5 risk limits"})
                 return out
+        if st["state"] in ("failed", "unavailable") and self.s.validation.paper_trade_unvalidated:
+            # D96: paper scalp may trade unvalidated strategies on the internal $1,000 ledger only
+            out.update(state="forward_test", score=float(self.s.validation.forward_test_quant_score),
+                       problems=[],
+                       reason=("PAPER SCALP: unvalidated strategy allowed on the internal ledger only (D96); "
+                               f"backtest said: {st['reason'][:160]}"),
+                       evidence={"paper_trade_unvalidated": True, "underlying": st["state"],
+                                 "note": "neutral quant score - no statistical evidence of an edge"})
+            return out
         if st["state"] == "failed":
             out["score"] = 0.0
             out["problems"] = [f"strategy failed backtest validation (run #{st['run_id']}): {st['reason'][:200]}"]

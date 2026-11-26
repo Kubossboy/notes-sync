@@ -125,3 +125,51 @@ def test_crosscheck_verdicts():
     assert cross_check("B", ac, {"a": 100}, CFG).verdict == "single_source"
     assert cross_check("B", ac, {"a": None, "b": 0}, CFG).verdict == "unavailable"
     assert not cross_check("B", ac, {"a": 100}, CFG).reliable
+
+
+def test_stale_asof_after_sleep_is_not_future():
+    """D98: a cycle-start `now` frozen across VM sleep must not flag already-occurred
+    (or slightly skewed) bars as 'timestamp in the future', nor halt on a forming
+    bar that has since closed. Genuinely future bars vs the wall clock still fail."""
+    from app.data.validation import FUTURE_TOLERANCE_S, retag_completeness, validate_candles as vc
+
+    cycle_start = datetime(2026, 11, 25, 18, 45, tzinfo=timezone.utc)   # last night, pre-sleep
+    wall = datetime(2026, 11, 26, 6, 25, tzinfo=timezone.utc)            # this morning, post-wake
+    # 15m series: last bar at cycle start was still forming; after sleep later bars exist
+    early = bars("QQQ", 4, end=cycle_start, ac=AssetClass.STOCK, forming=True, session="regular")
+    later = bars("QQQ", 3, end=datetime(2026, 11, 25, 20, 50, tzinfo=timezone.utc),
+                 ac=AssetClass.STOCK, forming=False, session="regular", start_price=early[-1].close)
+    cs = early + later
+    # Without the clock, a stale as-of (legacy behaviour) would flag later bars as future
+    # and the still-forming 18:45 bar as 'incomplete not last'. With clock=wall, they are just old.
+    issues, _ = vc(cs, "5m", AssetClass.STOCK, CFG, now=cycle_start, clock=wall)
+    assert not any("future" in i for i in issues), issues
+
+    retagged = retag_completeness(cs, "5m", wall)
+    issues, _ = vc(retagged, "5m", AssetClass.STOCK, CFG, now=cycle_start, clock=wall)
+    assert issues == [], issues
+    assert all(c.is_complete for c in retagged)
+
+    # A bar that is still in the future vs the wall clock remains invalid
+    genuine = bars("QQQ", 2, end=wall + timedelta(hours=1), ac=AssetClass.STOCK,
+                   forming=False, session="regular")
+    issues, _ = vc(genuine, "5m", AssetClass.STOCK, CFG, now=cycle_start, clock=wall)
+    assert any("future" in i for i in issues), issues
+
+    # A current snapshot only a few seconds ahead of the wall clock is clock skew, not future
+    skew = bars("SPY", 2, end=wall + timedelta(seconds=30), ac=AssetClass.STOCK,
+                forming=False, session="regular")
+    assert FUTURE_TOLERANCE_S >= 30
+    issues, _ = vc(skew, "5m", AssetClass.STOCK, CFG, now=wall, clock=wall)
+    assert not any("future" in i for i in issues), issues
+
+
+def test_naive_and_aware_now_compare_in_utc():
+    """Naive as-of instants are treated as UTC, not as the box's local zone (CET)."""
+    from app.data.validation import as_utc, validate_candles as vc
+    naive = datetime(2026, 11, 24, 8, 0)          # no tzinfo
+    assert as_utc(naive).tzinfo is timezone.utc
+    cs = bars("BTC-USD")  # last complete opens 07:55 UTC, closes 08:00
+    issues, _ = vc(cs, "5m", AssetClass.CRYPTO, CFG, now=naive)
+    assert issues == [], issues
+

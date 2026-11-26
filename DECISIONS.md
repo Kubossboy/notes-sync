@@ -86,6 +86,10 @@ Reversible technical decisions made during development. Newest last.
 | D80 | 2026-11-24 | Dashboard = Python stdlib `ThreadingHTTPServer` with server-rendered HTML (auto-refresh 30 s) + `/api/state` JSON, no new dependencies. It is READ-ONLY (SQLite `mode=ro`, day-start equity kept in an in-memory overlay), has no trade/kill/send actions, and binds to 127.0.0.1:8765 | Spec §9 suggests Streamlit/FastAPI; stdlib keeps the box lean and the attack surface minimal; monitoring must never change trading state | `dashboard --host --port` |
 | D81 | 2026-11-24 | Every panel is labelled: SIMULATED (ledger, portfolio, analytics, forward test, risk decisions) vs REAL (market data, news, integration probes, backtests on real history). Empty states are shown as text, never as placeholder numbers; times shown in Europe/Prague, trading day in New York | Spec §9: clearly distinguish simulated results from real observations | — |
 | D82 | 2026-11-24 | Continuous operation = `scripts/run_loop.sh` (one `trade` cycle every 60 s, stop via `var/STOP` or the PID in `var/loop.pid`), started manually with nohup; not started automatically | Kubiqq decides when ATLAS runs unattended | `INTERVAL` env var |
+| D95 | 2026-11-25 | Scalp profile overlay `config/scalp.yaml` via `ATLAS_CONFIG` (shorter TF/hold, lower signal gates, tighter lev TP ATR); risk caps and paper-only unchanged | Kubiqq asked to switch the paper loop to scalp style | unset `ATLAS_CONFIG` and restart the loop |
+| D96 | 2026-11-25 | Paper scalp: min score 40 (below observed 36-62 / typical 40-50), no resistance cap, max stop 6 ATR, unvalidated strategies may paper-trade; daily-loss / risk-per-trade / max positions / kill switch unchanged | Kubiqq: no auto trade since the loop started; filters too strict; explicitly approved for paper | set paper_trade_unvalidated false / raise min_score, or unset ATLAS_CONFIG |
+| D97 | 2026-11-25 | Paper scalp overlay: min_reward_risk 2.0 -> 1.5, lev_min_reward_risk 1.2 -> 1.0 (net of costs). Daily-loss / risk-per-trade / max positions / kill switch unchanged | Kubiqq: every auto signal still failed net R:R (e.g. 0.34 < 1.2, 1.00 < 1.2); explicitly loosened for paper | raise the two values in config/scalp.yaml, or unset ATLAS_CONFIG |
+| D98 | 2026-11-26 | Candle 'future' / incomplete-bar checks use a fresh UTC wall clock; a stale cycle-start now after VM sleep or a long cycle no longer false-halts. Genuinely future bars still fail. | After sleep, yesterday's SPY/TSLA (and current BTC) bars were flagged 'timestamp in the future' because `now` was captured at cycle start (~18:45 UTC) and never refreshed | pass `clock=now` in backtests; revert to validating only against the passed `now` |
 
 ## D83 - Dashboard v2: simpler top, position charts, equity curve, DEMO rule
 - Top of page shows only: balance, today P&L, open positions, risk status, forward-test progress (5 big cards). Everything else (signals, analytics, forward-test trades, validation, news, risk decisions, system/errors) sits in collapsed `<details>`.
@@ -222,3 +226,58 @@ Reversible technical decisions made during development. Newest last.
   the full notional (replaces 2.0 / 1.5 for leveraged entries).
 - Alpaca PAPER cannot do 100x: leveraged entries are mirrored at 1x size (qty / 100, i.e. the margin's worth); exits are
   mirrored as before.
+
+## D95 - Scalp config profile (overlay), requested by Kubiqq 2026-11-25
+
+No built-in scalp mode existed (the word "scalp" only referred to D94 tighter TP/SL on leveraged paper fills). Added `config/scalp.yaml`, an overlay loaded on top of `config/default.yaml` via `ATLAS_CONFIG` (D4). Enable with `ATLAS_CONFIG=config/scalp.yaml INTERVAL=30` when starting the paper loop. `default.yaml` is unchanged; unset the env var to revert.
+
+Intent: more frequent, smaller, shorter PAPER trades. Changes vs default:
+
+- Scanner: stock 5m -> 1m, crypto 15m -> 5m (not 1m: round-trip costs vs 1m crypto moves), lookback 400 -> 180 bars.
+- Hold / cooldown: crypto max hold 24 h -> 2 h; symbol cooldown after a loss 60 min -> 20 min (still a cooldown).
+- Signal gates: `min_score_to_trade` 70 -> 60 (spec floor, same as D93 forward-test floor). Strategy entry thresholds (min_rvol, min_roc, donchian, squeeze, imbalance, pullback) lowered; proposed `target_r` 2.5 -> 2.0.
+- Leveraged scalp levels: `lev_tp_atr` 1.25 -> 0.75 (TP still never wider than the signal; SL still min(signal, TP/1.5, 60 % of the way to liquidation)).
+- Loop interval (env, not YAML): 60 s -> 30 s recommended.
+
+Unchanged (not loosened): `execution.mode: paper`, `leverage_enabled` / `margin_enabled` false, no shorting, no averaging / martingale, require SL and TP, risk per trade 0.25 % (leveraged cap 25 %), daily loss 1 % (leveraged cap 50 %), max 2 positions, 3 consecutive losses end the day, `min_reward_risk` 2.0 / `lev_min_reward_risk` 1.2, kill switch. No GitHub push, no live trading.
+
+## D96 - Paper scalp: lower score floor and lift the hard gates that blocked every automatic entry (Kubiqq 2026-11-25)
+
+ATLAS has never opened a trade automatically. The only closed position (#1 BTC-USD, +$2.59) was a MANUAL entry (`strategy=manual_news`, `signal_id=None`, `validation_status=manual`). All 15 automatic signals ever persisted were `status=rejected` and never reached the risk engine (`trader` only picks `status='new'`).
+
+Why they were rejected (binding constraints, not just "score 70"):
+
+- Score distribution: 36.17–61.67 (mean 48.9). Typical cluster 42–56. The 60/70 score floor would have blocked most of them, but they already died earlier.
+- 13/15: net R:R after a nearby-resistance *target cap* was -0.43 to 0.60, below the 2.0 (then 1.2 leveraged) minimum. Sometimes the capped target was below entry (negative R:R).
+- 2/15: "stop too wide" (> 3 ATR), one also failed backtest validation.
+- 14/15 `validation_status=unavailable`, 1 `failed`. Even a complete signal would have been blocked by `strategy_validated_or_forward_test` (no strategy is OOS-validated; only `news_momentum` was on the forward-test list, and it never fired). Missing quant also marks the signal `incomplete`.
+
+Kubiqq explicitly approved loosening this for PAPER scalping. Overlay-only (`config/scalp.yaml`) plus the minimum code to honour those settings:
+
+- `scoring.min_score_to_trade` and `validation.forward_test_min_score`: 60 → 40 (config validators now allow 0–100 so the overlay can go below the old spec floor of 60; default.yaml stays 70 / 60).
+- `scanner.cap_target_by_resistance: false` (default remains true; backtests unchanged).
+- `scanner.max_stop_atr: 6` (default remains 3).
+- `validation.paper_trade_unvalidated: true`: failed/unavailable strategies get a neutral quant score and may paper-trade on the internal $1,000 ledger (forward-test path). Default remains false.
+- `risk.lev_tp_atr`: 0.75 → 1.5 (max). D95's 0.75 ATR targets could not clear net R:R 1.2 after crypto fees; SL still never wider than the signal or 60 % of the way to liquidation.
+
+Unchanged: `execution.mode: paper`, `leverage_enabled` / `margin_enabled` false, risk per trade 0.25 % (leveraged cap 25 %), daily loss 1 % (leveraged cap 50 %), max 2 positions, 3 consecutive losses end the day, require SL/TP, no averaging / martingale, kill switch, `min_reward_risk` 2.0 / `lev_min_reward_risk` 1.2. No GitHub push, no live trading.
+
+## D97 - Paper scalp: lower net reward/risk floors (Kubiqq 2026-11-25)
+
+After D96, automatic entries were still rejected on net R:R (dashboard examples: `0.34 < 1.2`, `1.00 < 1.2`). The binding gate with `paper_leverage: 100` is `risk.lev_min_reward_risk` (scanner `build_plan` and the risk engine). Kubiqq asked to loosen only those floors in `config/scalp.yaml`:
+
+- `risk.min_reward_risk`: 2.0 -> 1.5 (unlevered / default profile stays 2.0; validator already allowed >= 1.0)
+- `risk.lev_min_reward_risk`: 1.2 -> 1.0 (config default stays 1.2; validator floor lowered 1.2 -> 1.0 so the overlay can load)
+
+Unchanged: `execution.mode: paper`, `leverage_enabled` / `margin_enabled` false, risk per trade 0.25 % (leveraged cap 25 %), daily loss 1 % (leveraged cap 50 %), max 2 positions, 3 consecutive losses end the day, require SL/TP, no averaging / martingale, kill switch, D96 score 40 / no resistance cap / paper_trade_unvalidated. No GitHub push, no live trading.
+
+## D98 - Do not SAFE-STATE halt on a stale cycle-start `now` after sleep (2026-11-26)
+
+Root cause: `PaperTrader.run_once` captured `now = datetime.now(UTC)` once and passed it into `get_candles` / `validate_candles`. After the box slept mid-cycle (or a cycle ran longer than `FUTURE_TOLERANCE_S`), that as-of lagged the wall clock. Freshly fetched bars (the rest of yesterday's session, or crypto bars from this morning) then failed `open_time > now + tolerance` ("timestamp in the future") and already-closed 15m bars that were still marked forming failed "incomplete candle is not the last one". Both paths halt (`halt_on_invalid_data`). Event timestamps used a fresh `utcnow()`, so the log showed "today 07:25" rejecting "yesterday 00:50 / last-night 18:45" bars.
+
+Fix:
+- `validate_candles` / `label_freshness` compare timezone-aware UTC instants; naive values are treated as UTC (not local CET).
+- Live engine fetches always take a fresh `wall_clock()` and, when the caller's as-of is behind the wall clock *and* the series contains bars that already existed by then, refresh the as-of and retag `is_complete`. Backtests whose bars all sit at or before their as-of are unchanged.
+- Tolerance is 120 s (clock skew / Yahoo's current snapshot bar). Bars still in the future vs the wall clock remain invalid. Stale / closed-market data stays DELAYED, not a halt.
+
+The overnight NVDA/QQQ paper positions were closed by `manage_position` catch-up on wake (NVDA take-profit, QQQ stop-loss) before this fix; they were not edited by hand.

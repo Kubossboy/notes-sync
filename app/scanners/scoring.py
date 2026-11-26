@@ -47,16 +47,18 @@ def build_plan(setup: Setup, ctx: StrategyContext, settings: Settings) -> Plan:
         risk = max(risk, 1e-12)
     if atr and risk < 0.25 * atr:
         problems.append(f"stop too tight ({risk / atr:.2f} ATR < 0.25 ATR, inside noise)")
-    if atr and risk > 3 * atr:
-        problems.append(f"stop too wide ({risk / atr:.2f} ATR > 3 ATR)")
+    max_stop_atr = float(getattr(settings.scanner, "max_stop_atr", 3.0) or 3.0)
+    if atr and risk > max_stop_atr * atr:
+        problems.append(f"stop too wide ({risk / atr:.2f} ATR > {max_stop_atr:g} ATR)")
     target = e + setup.target_r * risk
     capped = None
-    # a tested resistance between entry and target caps the realistic target
-    obstacles = sorted(L["price"] for L in ctx.levels
-                       if L["touches"] >= 2 and "high" in L["kinds"] and e + 0.25 * risk < L["price"] < target)
-    if obstacles:
-        capped = obstacles[0]
-        target = capped
+    # a tested resistance between entry and target caps the realistic target (optional; D96 scalp may disable)
+    if getattr(settings.scanner, "cap_target_by_resistance", True):
+        obstacles = sorted(L["price"] for L in ctx.levels
+                           if L["touches"] >= 2 and "high" in L["kinds"] and e + 0.25 * risk < L["price"] < target)
+        if obstacles:
+            capped = obstacles[0]
+            target = capped
     cost = e * 2 * ctx.cost_bps_per_side / 1e4          # entry + exit, fees + slippage
     reward = target - e
     rr_g = reward / risk

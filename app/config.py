@@ -106,7 +106,7 @@ class RiskSection(_Strict):
     lev_max_risk_per_trade_pct: float = Field(25.0, gt=0, le=25.0)    # 0.25 % x 100 = 25 % ($250 on $1,000)
     lev_max_daily_loss_pct: float = Field(50.0, gt=0, le=50.0)        # 1 % x 100 = 100 % -> capped at 50 %
     lev_max_drawdown_pct: float = Field(50.0, gt=0, le=50.0)          # no new trades below 50 % of start equity
-    lev_min_reward_risk: float = Field(1.2, ge=1.2)                   # scalp levels, net of fees on full notional
+    lev_min_reward_risk: float = Field(1.2, ge=1.0)                   # default 1.2; D97 paper-scalp overlay may set 1.0
     lev_tp_atr: float = Field(1.25, gt=0, le=1.5)                     # TP <= fill + 1.25 x ATR14(15m)
     lev_sl_liq_fraction: float = Field(0.6, gt=0, le=0.8)             # SL at most 60 % of the way to liquidation
 
@@ -130,7 +130,7 @@ class Weights(_Strict):
 
 
 class ScoringSection(_Strict):
-    min_score_to_trade: int = Field(70, ge=60, le=100)  # spec: below 60 = never trade
+    min_score_to_trade: int = Field(70, ge=0, le=100)  # default 70; D96 allows paper-scalp overlays below the old spec floor of 60
     weights: Weights = Weights()
 
 
@@ -195,6 +195,8 @@ class ScannerSection(_Strict):
     crypto_min_depth_usd_05: float = Field(50_000, ge=0)        # each side within 0.5% of mid
     stock_strategies: dict[str, StrategyToggle] = {}
     crypto_strategies: dict[str, StrategyToggle] = {}
+    cap_target_by_resistance: bool = True   # D96: scalp overlay may disable; nearby resistance was collapsing net R:R
+    max_stop_atr: float = Field(3.0, gt=0, le=10)  # reject a setup whose stop is wider than this many ATR
 
 
 class NewsSection(_Strict):
@@ -238,9 +240,11 @@ class ValidationSection(_Strict):
     forward_test_quant_score: float = Field(50.0, ge=0, le=100)   # neutral: no evidence either way yet
     forward_test_target_trades: int = Field(30, ge=10)
     # D93: moderately looser ENTRY gates for forward-test strategies (news_momentum) on the main paper ledger only.
-    forward_test_min_score: int = Field(60, ge=60, le=100)          # was scoring.min_score_to_trade 70
+    forward_test_min_score: int = Field(60, ge=0, le=100)           # default 60; D96 allows paper-scalp overlays below the old floor
     forward_test_min_reward_risk: float = Field(1.5, ge=1.5)        # was risk.min_reward_risk 2.0 (net of costs)
     # Shadow forward test (D91): evidence-based promotion / demotion only - never parameter optimisation
+    # D96: when True (scalp overlay only), failed/unavailable strategies may paper-trade on the internal ledger
+    paper_trade_unvalidated: bool = False
     shadow_enabled: bool = True
     shadow_min_trades: int = Field(30, ge=30)            # promotion needs >= 30 closed shadow trades
     shadow_window: int = Field(30, ge=30)                # rolling window for promotion / demotion stats

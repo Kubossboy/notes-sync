@@ -3,6 +3,7 @@
 # snapshot) every INTERVAL seconds. The internal $1,000 ledger is the source of truth; when alpaca_paper_orders_enabled is true (default) entries/exits are
 # mirrored to the Alpaca PAPER account (D85). Never live trading.
 # Stop: create var/STOP (checked every cycle) or kill the PID in var/loop.pid. Kill switch: `python -m app.main kill "reason" --flatten`.
+# Optional: ATLAS_CONFIG=config/scalp.yaml INTERVAL=30 for the scalp overlay (D95). Never live trading.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 INTERVAL="${INTERVAL:-60}"

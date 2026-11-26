@@ -149,3 +149,21 @@ def test_collect_survives_unexpected_exception(settings, db):
     assert rep[0]["status"] == "error" and rep[1]["symbol"] == "BTC-USD"
     assert not safe.trading_allowed()
     assert count(db, "SELECT COUNT(*) FROM errors WHERE module='data.engine'") == 1
+
+
+def test_stale_cycle_now_after_sleep_does_not_halt(settings, db, monkeypatch):
+    """Live get_candles with a cycle-start now from before VM sleep, against bars that
+    continued after that now, must not enter SAFE STATE (D98)."""
+    from app.data.validation import wall_clock
+    cycle_start = END                                  # 08:00 UTC 24 Nov
+    wake = END + timedelta(hours=12)                   # 20:00 UTC, after "sleep"
+    # bars continue past cycle_start (like the rest of the session after the box slept)
+    cs = bars("BTC-USD", 16, end=END + timedelta(hours=1), forming=False)  # last open 08:55
+    eng, safe = make(settings, db, **{n: FakeProvider(n, cs, price=100.0, bid=99.99, ask=100.01)
+                                      for n in ("coinbase", "kraken", "binance")})
+    monkeypatch.setattr("app.data.engine.wall_clock", lambda: wake)
+    r = eng.get_candles("BTC-USD", "5m", now=cycle_start)
+    assert safe.trading_allowed(), (safe.status().reason, r.series.issues)
+    assert r.series.issues == []
+    assert not any("future" in (r.series.issues or []) for _ in [0])
+

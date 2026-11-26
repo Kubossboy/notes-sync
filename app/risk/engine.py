@@ -174,7 +174,8 @@ class RiskEngine:
         add("long_only", p.direction == "long" or self.ex.allow_short, detail=p.direction)
         add("signal_complete", p.status == "new",
             detail=f"signal status '{p.status}' (only complete, non-rejected signals are executable)")
-        ft_ok = p.validation_status == "forward_test" and p.strategy in self.s.validation.forward_test_strategies
+        ft_ok = (p.validation_status == "forward_test" and (
+            p.strategy in self.s.validation.forward_test_strategies or self.s.validation.paper_trade_unvalidated))
         promoted = False
         if p.validation_status == "shadow_promoted":                 # D91: re-checked at risk time
             from app.shadow.engine import ShadowEngine

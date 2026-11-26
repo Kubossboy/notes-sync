@@ -188,7 +188,7 @@ app/
   risk/ execution/ portfolio/   risk engine, paper simulator/trader, ledger
   dashboard/         data.py (read-only journal view), server.py (local web dashboard)
   analytics/         (later milestones)
-config/default.yaml  all non-secret settings
+config/default.yaml  all non-secret settings; optional overlay via ATLAS_CONFIG (config/scalp.yaml = scalp profile, D95)
 .env.example         optional credentials (copy to .env, never commit)
 tests/               pytest suite (`-m live` = real network)
 docs/                architecture notes
