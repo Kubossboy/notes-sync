@@ -1,0 +1,98 @@
+# Free paper-trading loop on GitHub Actions. Never print secrets.
+name: atlas
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+concurrency:
+  group: atlas
+  cancel-in-progress: true
+permissions:
+  contents: write
+env:
+  PYTHONUNBUFFERED: "1"
+  HF_HUB_DISABLE_PROGRESS_BARS: "1"
+  ALPACA_API_KEY_ID: ${{ secrets.ALPACA_API_KEY_ID }}
+  ALPACA_API_SECRET_KEY: ${{ secrets.ALPACA_API_SECRET_KEY }}
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+jobs:
+  paper:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/huggingface
+            .wrangler-cache
+          key: ${{ runner.os }}-hf-wrangler-v1
+
+      - name: Install deps (CPU torch)
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -U pip
+          .venv/bin/pip install --index-url https://download.pytorch.org/whl/cpu torch==2.15.0
+          .venv/bin/pip install -r requirements.txt
+
+      - name: Restore ledger from state branch
+        run: |
+          set -euo pipefail
+          mkdir -p var
+          if git fetch origin state:state; then
+            git show state:var/atlas.sqlite3 > var/atlas.sqlite3
+            echo "restored var/atlas.sqlite3 from state"
+          else
+            echo "no state branch yet; a fresh ledger will be created on first trade"
+          fi
+
+      - name: Paper trade loop (~4 minutes, 30s apart)
+        run: |
+          set -euo pipefail
+          START=$(date +%s)
+          while [ $(( $(date +%s) - START )) -lt 240 ]; do
+            .venv/bin/python -m app.main trade --json || echo "trade cycle failed"
+            LEFT=$(( 240 - ($(date +%s) - START) ))
+            [ "$LEFT" -le 5 ] && break
+            sleep 30
+          done
+
+      - name: Export dashboard and publish to Cloudflare Pages
+        run: bash scripts/publish.sh
+
+      - name: Commit ledger back to state branch
+        run: |
+          set -euo pipefail
+          test -f var/atlas.sqlite3
+          mkdir -p "${RUNNER_TEMP}/st/var"
+          cp -f var/atlas.sqlite3 "${RUNNER_TEMP}/st/var/atlas.sqlite3"
+          export GIT_INDEX_FILE="${RUNNER_TEMP}/state.index"
+          export GIT_WORK_TREE="${RUNNER_TEMP}/st"
+          git config user.name "ATLAS Dev"
+          git config user.email "atlas@localhost"
+          rm -f "$GIT_INDEX_FILE"
+          if git fetch origin state:state; then
+            git read-tree state
+          fi
+          git add -f var/atlas.sqlite3
+          TREE=$(git write-tree)
+          PARENT=$(git rev-parse --verify state 2>/dev/null || true)
+          if [ -n "$PARENT" ] && [ "$(git rev-parse "$PARENT^{tree}")" = "$TREE" ]; then
+            echo "state unchanged"
+            exit 0
+          fi
+          if [ -n "$PARENT" ]; then
+            COMMIT=$(git commit-tree "$TREE" -p "$PARENT" -m "Update paper ledger")
+          else
+            COMMIT=$(git commit-tree "$TREE" -m "Initial paper ledger")
+          fi
+          git push origin "$COMMIT":refs/heads/state

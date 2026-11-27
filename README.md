@@ -11,6 +11,22 @@ market-intelligence and **paper-trading-only** platform for US stocks and crypto
 
 Current phase: **Milestone 7 – dashboard, forward paper test, Alpaca PAPER mirror**. See `PROJECT_STATUS.md`.
 
+## Jak to funguje
+
+ATLAS je **pouze paper** obchodní bot (akcie USA + krypto) s virtuálním účtem $1 000.
+Páka 100× je jen simulovaná na interním účtu, žádné reálné obchody ani půjčky.
+Zprávy skóruje lokální model FinBERT. Poplatky u krypta kopírují Bybit USDT-perp
+(5,5 bps taker na stranu z celé notional + 3 bps slippage); akcie mají $0 provizi
+a 5 bps slippage.
+
+Běží **zdarma na GitHub Actions každou 5. minutu** (workflow `atlas`). Stav ledgeru
+je ve větvi `state`. Živý dashboard:
+
+https://atlas-724f10c62b.pages.dev/DCaDzBY7gXsx-IfjJsY2FRLW/
+
+**Zastavení:** v GitHubu → Actions → atlas → `...` → Disable workflow.
+
+
 **New here / using another AI?** Read [`AGENTS.md`](AGENTS.md) (rules for any coding AI), [`START_CZ.md`](START_CZ.md) (Czech quick start)
 and [`docs/CHATGPT_PROMPT.md`](docs/CHATGPT_PROMPT.md). Cross-platform launchers: `./start.sh <cmd>` (Linux/macOS), `start.bat <cmd>` (Windows),
 `make <cmd>`; commands: `setup test status probe trade loop dashboard stop kill resume`.
