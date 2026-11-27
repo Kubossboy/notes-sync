@@ -20,6 +20,15 @@ a 5 bps slippage.
 Běží **zdarma na GitHub Actions** (workflow `atlas`, cron každých 5 minut plus samočinné řetězení). Stav ledgeru
 je ve větvi `state`.
 
+**Universum:** 90 likvidních US akcií/ETF (skenují se jen v otevřené seanci US trhu) a 40 nejlikvidnějších
+krypto párů (USDT objem na Binance, zároveň listované na Coinbase). Každý cyklus skenuje další dávku
+(30 akcií + 14 krypto, rotující kurzor), takže celé universum projde zhruba každý běh (~4 min).
+Špatná data u vedlejšího symbolu ho jen na cyklus vyřadí; globální SAFE STATE zůstává pro hlavní symboly (D98).
+
+**Dashboard:** `app/dashboard/static/atlas.html` (česky, tmavý, sbalitelné sekce, mobil) + `data.json`
+z `app/dashboard/live.py`. Obsahuje graf TradingView (`tv.js`) s výběrem symbolu; export odmítne publikovat
+šablonu bez něj. Adresa je pevná přes GitHub secrets `ATLAS_PUBLISH_PROJECT` / `ATLAS_PUBLISH_SLUG`.
+
 **Zastavení:** v GitHubu → Actions → atlas → `...` → Disable workflow.
 
 

@@ -1,8 +1,10 @@
 """Static, read-only dashboard snapshot for publishing (Cloudflare Pages).
 
 Writes   <out>/index.html            decoy "nothing here" page (noindex)
-         <out>/<slug>/index.html     the dashboard (static mode: refetches top.html + state.json every 60 s)
-         <out>/<slug>/top.html       cards + position charts + balance chart
+         <out>/<slug>/index.html     the Czech dashboard = app/dashboard/static/atlas.html, copied verbatim
+                                     (TradingView tv.js widget; export fails if the widget is missing, so an
+                                     older template can never be published again)
+         <out>/<slug>/data.json      scrubbed view model (app/dashboard/live.py), refetched every 60 s
          <out>/<slug>/state.json     scrubbed state
          <out>/_headers, robots.txt  noindex / no-store / no-referrer for every path
 
@@ -22,7 +24,10 @@ from pathlib import Path
 
 from app.config import Settings
 from app.dashboard.data import collect
-from app.dashboard.server import render, render_top
+from app.dashboard.live import build_view
+
+TEMPLATE = Path(__file__).resolve().parent / "static" / "atlas.html"
+TV_MARKER = "s3.tradingview.com/tv.js"
 
 _PATH = re.compile(r"(?:[A-Za-z]:\\|~/|/(?:workspace|home|cursor|tmp|var|etc|usr|root|opt|mnt|proc|srv)\b)[^\s'\"<>),;]*")
 _EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
@@ -66,6 +71,9 @@ def scrub(obj, secrets_=None):
 
 def publish_config(settings: Settings) -> dict:
     """Random, unguessable project name + path slug, created once and kept in var/ (git-ignored)."""
+    env_p, env_s = os.environ.get("ATLAS_PUBLISH_PROJECT"), os.environ.get("ATLAS_PUBLISH_SLUG")
+    if env_p and env_s:          # CI (GitHub secrets): always the same project + URL, never a new random one
+        return {"project": env_p, "slug": env_s}
     p = Path(settings.db_path).resolve().parent / "publish.json"
     if p.exists():
         return json.loads(p.read_text())
@@ -86,15 +94,18 @@ DECOY = ('<!doctype html><html><head><meta charset="utf-8"><meta name="robots" c
 
 
 def export(settings: Settings, out: Path, slug: str, db_path=None, live_prices: bool = True) -> Path:
-    d = collect(settings, db_path, live_prices=live_prices)
+    html = TEMPLATE.read_text()
+    if TV_MARKER not in html:
+        raise RuntimeError("dashboard template lost the TradingView widget; refusing to publish")
+    d = collect(settings, db_path, live_prices=False)
     d = scrub(json.loads(json.dumps(d, default=str)))  # JSON round-trip: only plain data survives
-    d2 = _rehydrate(json.loads(json.dumps(d)))          # charts need datetimes back
+    view = scrub(json.loads(json.dumps(build_view(settings, db_path), default=str)))
     site = out / slug
     site.mkdir(parents=True, exist_ok=True)
-    (site / "index.html").write_text(render(d2, static=True))
-    (site / "top.html").write_text(render_top(d2))
+    (site / "index.html").write_text(html)
+    (site / "data.json").write_text(json.dumps(view, default=str))
     shutil.copyfile(VENDOR / "lightweight-charts.standalone.production.js", site / "lwc.js")   # Apache-2.0, vendored
-    public = {k: d[k] for k in ("generated_ts", "overview", "forward_test", "equity_curve", "start_equity") if k in d}
+    public = {k: d[k] for k in ("generated_ts", "overview", "forward_test", "start_equity") if k in d}
     public["positions"] = [{k: v for k, v in p.items() if k != "candles"} for p in d.get("portfolio", [])]
     (site / "state.json").write_text(json.dumps(public, default=str, indent=1))
     (out / "index.html").write_text(DECOY)

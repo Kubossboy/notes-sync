@@ -281,3 +281,19 @@ Fix:
 - Tolerance is 120 s (clock skew / Yahoo's current snapshot bar). Bars still in the future vs the wall clock remain invalid. Stale / closed-market data stays DELAYED, not a halt.
 
 The overnight NVDA/QQQ paper positions were closed by `manage_position` catch-up on wake (NVDA take-profit, QQQ stop-loss) before this fix; they were not edited by hand.
+
+
+## D98 — wide universe, quarantine instead of global halt, fixed dashboard URL (2026-11-27)
+
+- Watchlists grew to 90 stocks/ETFs + 40 crypto pairs; trade cycles scan rotating batches
+  (`scanner.stock_batch_size` 30, `crypto_batch_size` 14, cursor in `system_state`); stocks only in the US regular session.
+- News ingest scales: Yahoo ticker RSS is fetched 10 tickers per request, SEC filings rotate 12 tickers per ingest
+  (`news.sec_max_tickers`), and already-stored headlines skip the FinBERT pass.
+- Divergent / missing / invalid data on a symbol outside `data.core_symbols` quarantines that symbol for the cycle
+  instead of halting everything (a BLUR-USD Coinbase/Binance gap halted the whole bot in a local test). Core symbols
+  (the previous 11) keep the global SAFE STATE.
+- Root cause of the "no scans for a day" report: CI never had `var/publish.json` (git-ignored), so each run published
+  to a brand-new random Cloudflare Pages project; the user's URL kept the last box snapshot. Project + slug now come
+  from GitHub secrets and the workflow refuses to publish without them.
+- New Czech dashboard (static template + data.json) with the TradingView tv.js widget; `export` raises if the template
+  lacks it. Risk rules unchanged (min RR 1.2, Bybit fees on crypto, Alpaca fees on stocks).

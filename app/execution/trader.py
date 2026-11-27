@@ -168,9 +168,14 @@ class PaperTrader:
         if scan and self.scanner is not None and self.safe.trading_allowed():
             run_ids = []
             for ac in (AssetClass.STOCK, AssetClass.CRYPTO):
-                rep = self.scanner.run(ac, mode="live")
+                syms = self.scan_batch(ac, now)
+                if not syms:
+                    report["scans"].append({"scanner": ac.value, "skipped": "US market closed"})
+                    continue
+                rep = self.scanner.run(ac, symbols=syms, mode="live")
                 run_ids.append(rep["run_id"])
-                report["scans"].append({"scanner": ac.value, "run_id": rep["run_id"], "signals": rep["signals"]})
+                report["scans"].append({"scanner": ac.value, "run_id": rep["run_id"], "signals": rep["signals"],
+                                        "symbols": len(syms)})
             # shadow ledger first (every strategy, separate ledger; never affects the portfolio / risk / Alpaca)
             report["shadow"]["opened"] = self._shadow(lambda: self.shadow.open_from_signals(run_ids, self.quote, now))
             for row in self.candidates(run_ids):
@@ -182,6 +187,26 @@ class PaperTrader:
         report["portfolio"] = summary(st, self.s)
         report["safe_state"] = self.safe.status().reason
         return report
+
+    def scan_batch(self, ac: AssetClass, now: datetime) -> list[str]:
+        """Next slice of the watchlist (rotating cursor in system_state) so a big universe fits a short cycle."""
+        stock = ac == AssetClass.STOCK
+        sc = self.s.scanner
+        if stock and sc.stocks_only_in_market_hours:
+            from app.data.calendar import regular_session_open
+            if not regular_session_open(now):
+                return []
+        wl = list(self.s.markets.stocks.watchlist if stock else self.s.markets.crypto.watchlist)
+        if not (self.s.markets.stocks.enabled if stock else self.s.markets.crypto.enabled):
+            return []
+        n = sc.stock_batch_size if stock else sc.crypto_batch_size
+        if not wl or n <= 0 or n >= len(wl):
+            return wl
+        key = f"scan_cursor_{ac.value}"
+        cur = int(self.db.get_state(key, 0) or 0) % len(wl)
+        batch = (wl + wl)[cur:cur + n]
+        self.db.set_state(key, (cur + n) % len(wl))
+        return batch
 
     def _shadow(self, fn):
         try:

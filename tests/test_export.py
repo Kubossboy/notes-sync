@@ -30,44 +30,40 @@ def test_export_static_snapshot(settings, dash_db, tmp_path):
     out = tmp_path / "site"
     site = export(settings, out, cfg["slug"], settings.db_path, live_prices=False)
     page = (site / "index.html").read_text()
-    assert 'name="robots" content="noindex' in page and "READ-ONLY SNAPSHOT" in page and "state.json" in page
-    assert "/fragment/top" not in page and "<form" not in page and "method:'POST'" not in page
-    import re
-    assert all("data-tf=" in m for m in re.findall(r"<button[^>]*", page))   # only view-only timeframe buttons
+    assert 'name="robots" content="noindex' in page and "data.json" in page and 'lang="cs"' in page
+    assert "<form" not in page and "POST" not in page
     assert "X-Robots-Tag: noindex" in (out / "_headers").read_text()
     assert "Disallow: /" in (out / "robots.txt").read_text()
     assert "Not found" in (out / "index.html").read_text()      # root reveals nothing
     st = json.loads((site / "state.json").read_text())
-    assert set(st) >= {"generated_ts", "overview", "positions", "equity_curve"}
+    assert set(st) >= {"generated_ts", "overview", "positions"}
+    view = json.loads((site / "data.json").read_text())
+    assert set(view) >= {"summary", "positions", "trades", "signals", "near_misses", "scan_log", "universe", "tv_symbols"}
+    assert view["universe"]["stocks"] == len(settings.markets.stocks.watchlist)
     blob = "".join(p.read_text() for p in out.rglob("*") if p.is_file())
     for bad in (str(tmp_path), "/workspace", "/home/", "sqlite3", ".secrets"):
         assert bad not in blob
 
 
-def test_static_page_has_live_price_layer(settings, dash_db, tmp_path):
-    from datetime import datetime, timedelta, timezone
-    from app.dashboard.charts import position_chart_svg
-    page = (export(settings, tmp_path / "s", "slug", settings.db_path, live_prices=False) / "index.html").read_text()
-    assert "api.exchange.coinbase.com/products/" in page and 'id="live"' in page and "SNAPSHOT prices" in page
-    assert "no free live stock feed" in page                          # stocks stay snapshot, labelled
-    t = datetime(2026, 11, 24, 9, tzinfo=timezone.utc)
-    svg = position_chart_svg([(t + timedelta(minutes=15 * i), 100, 101, 99, 100.5) for i in range(5)], 100, 98, 105, 100.5)
-    assert 'data-lo="' in svg and 'class="lcw"' in svg and 'class="lcb"' in svg and 'class="mk"' in svg
-    assert svg.count('class="lcw"') == 1                              # only the last candle is live-updated
+def test_publish_config_from_env(settings, monkeypatch):
+    monkeypatch.setenv("ATLAS_PUBLISH_PROJECT", "atlas-fixed")
+    monkeypatch.setenv("ATLAS_PUBLISH_SLUG", "s" * 24)
+    assert publish_config(settings) == {"project": "atlas-fixed", "slug": "s" * 24}
 
 
-def test_static_page_has_timeframe_switcher(settings, dash_db, tmp_path):
-    page = (export(settings, tmp_path / "s", "slug", settings.db_path, live_prices=False) / "index.html").read_text()
-    for s in ("/candles?granularity=", "'1m': [60, 1]", "'4h': [3600, 4]", "'1D': [86400, 1]", "TF_DEFAULT = '15m'",
-              "localStorage", "snapshot candles only"):
-        assert s in page, s
-
-
-def test_static_page_uses_vendored_lightweight_charts(settings, dash_db, tmp_path):
+def test_dashboard_keeps_tradingview_widget(settings, dash_db, tmp_path):
     site = export(settings, tmp_path / "s", "slug", settings.db_path, live_prices=False)
     page = (site / "index.html").read_text()
-    assert (site / "lwc.js").stat().st_size > 100_000                 # vendored, no CDN
-    assert '<script src="lwc.js"></script>' in page and "cdn" not in page.lower()
-    assert "TradingView Lightweight Charts" in page and "https://www.tradingview.com/" in page   # Apache-2.0 attribution
-    for s in ("createPriceLine", "CandlestickSeries", "LineSeries", "pinch: true", "id=\"eqsec\""):
-        assert s in page, s
+    assert "https://s3.tradingview.com/tv.js" in page and "new TradingView.widget" in page and 'id="sym"' in page
+    assert (site / "lwc.js").stat().st_size > 100_000 and "<details" in page
+    view = json.loads((site / "data.json").read_text())
+    assert any(x["tv"] == "BINANCE:BTCUSDT" for x in view["tv_symbols"])
+
+
+def test_export_refuses_template_without_tradingview(settings, dash_db, tmp_path, monkeypatch):
+    import app.dashboard.export as ex
+    bad = tmp_path / "old.html"
+    bad.write_text("<html>old chart</html>")
+    monkeypatch.setattr(ex, "TEMPLATE", bad)
+    with pytest.raises(RuntimeError):
+        export(settings, tmp_path / "s", "slug", settings.db_path, live_prices=False)

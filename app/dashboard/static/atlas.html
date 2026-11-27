@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<title>ATLAS · paper</title>
+<style>
+:root{--bg:#0b0f17;--panel:#121826;--line:#1f2937;--txt:#e5e7eb;--mut:#8b95a7;--up:#22c55e;--dn:#ef4444;--acc:#60a5fa;--warn:#f59e0b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.wrap{max-width:1200px;margin:0 auto;padding:14px}
+header{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+h1{font-size:18px;margin:0;letter-spacing:.5px}
+.pill{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;background:#1f2937;color:var(--mut)}
+.pill.ok{background:#052e1a;color:var(--up)}.pill.bad{background:#3b0d0d;color:var(--dn)}.pill.warn{background:#3a2a05;color:var(--warn)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px}
+.card .k{color:var(--mut);font-size:12px}.card .v{font-size:22px;font-weight:650;margin-top:2px}
+.card .s{color:var(--mut);font-size:12px;margin-top:2px}
+.up{color:var(--up)}.dn{color:var(--dn)}.mut{color:var(--mut)}
+details{background:var(--panel);border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden}
+summary{cursor:pointer;padding:12px 14px;font-weight:600;list-style:none;display:flex;justify-content:space-between;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary:after{content:"▾";color:var(--mut)}details:not([open]) summary:after{content:"▸"}
+.body{padding:0 14px 14px}
+.tbl{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+th{color:var(--mut);font-weight:500;font-size:12px}
+td.r{white-space:normal;min-width:220px;color:var(--mut)}
+.empty{color:var(--mut);padding:6px 0}
+#tv{height:460px}
+select{background:#0f1522;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:6px 8px;max-width:100%}
+.bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+#eq{height:200px}
+.foot{color:var(--mut);font-size:12px;margin:14px 0}
+@media(max-width:600px){.card .v{font-size:18px}#tv{height:360px}th,td{padding:6px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header><h1>ATLAS · paper trading</h1><div><span id="status" class="pill">načítám…</span> <span id="mkt" class="pill"></span></div></header>
+
+<div class="cards">
+  <div class="card"><div class="k">Equity</div><div class="v" id="c-eq">–</div><div class="s" id="c-eq-s"></div></div>
+  <div class="card"><div class="k">P&amp;L celkem</div><div class="v" id="c-pnl">–</div><div class="s" id="c-day"></div></div>
+  <div class="card"><div class="k">Otevřené pozice</div><div class="v" id="c-pos">–</div><div class="s" id="c-pos-s"></div></div>
+  <div class="card"><div class="k">Poslední sken</div><div class="v" id="c-scan">–</div><div class="s" id="c-scan-s"></div></div>
+  <div class="card"><div class="k">Universum</div><div class="v" id="c-uni">–</div><div class="s" id="c-uni-s"></div></div>
+</div>
+
+<details open><summary>Graf (TradingView)</summary><div class="body">
+  <div class="bar"><select id="sym"></select><select id="tf"><option value="5">5m</option><option value="15" selected>15m</option><option value="60">1h</option><option value="240">4h</option><option value="D">1D</option></select></div>
+  <div id="tv"></div>
+</div></details>
+
+<details open><summary>Otevřené pozice <span class="pill" id="n-pos"></span></summary><div class="body"><div class="tbl" id="t-pos"></div></div></details>
+<details open><summary>Poslední obchody <span class="pill" id="n-tr"></span></summary><div class="body"><div class="tbl" id="t-tr"></div></div></details>
+<details open><summary>Signály a těsně vedle <span class="pill" id="n-near"></span></summary><div class="body"><div class="tbl" id="t-near"></div></div></details>
+<details><summary>Výsledek skenu po symbolech (24 h) <span class="pill" id="n-res"></span></summary><div class="body"><div class="tbl" id="t-res"></div></div></details>
+<details><summary>Log skenů <span class="pill" id="n-log"></span></summary><div class="body"><div class="tbl" id="t-log"></div></div></details>
+<details><summary>Vývoj equity</summary><div class="body"><div id="eq"></div></div></details>
+<details><summary>Chyby</summary><div class="body"><div class="tbl" id="t-err"></div></div></details>
+
+<div class="foot">Jen simulace (paper, virtuálních $1&nbsp;000). Data se obnovují každou minutu. <span id="gen"></span><br>
+Grafy: <a href="https://www.tradingview.com/" rel="noopener noreferrer" target="_blank" style="color:var(--acc)">TradingView</a></div>
+</div>
+
+<script src="https://s3.tradingview.com/tv.js"></script>
+<script src="lwc.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const usd=(v,d=2)=>v==null?"–":(v<0?"-":"")+"$"+Math.abs(v).toLocaleString("cs-CZ",{minimumFractionDigits:d,maximumFractionDigits:d});
+const sgn=v=>v==null?"":(v>0?"up":v<0?"dn":"");
+const num=(v,d=2)=>v==null?"–":Number(v).toLocaleString("cs-CZ",{maximumFractionDigits:d});
+const tm=t=>{if(!t)return"–";const d=new Date(t);return d.toLocaleString("cs-CZ",{timeZone:"Europe/Prague",day:"numeric",month:"numeric",hour:"2-digit",minute:"2-digit"})};
+const ago=t=>{if(!t)return"";const m=Math.round((Date.now()-new Date(t))/60000);return m<1?"právě teď":m<60?`před ${m} min`:`před ${Math.round(m/60)} h`};
+function table(cols,rows,empty){if(!rows||!rows.length)return`<div class="empty">${empty}</div>`;
+ return`<table><thead><tr>${cols.map(c=>`<th>${c[0]}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>{const v=c[1](r);return c[2]?`<td class="${c[2](r)}">${v}</td>`:`<td>${v}</td>`}).join("")}</tr>`).join("")}</tbody></table>`}
+let tvSym=null,tvTf="15",eqChart=null;
+function drawTV(){if(!window.TradingView||!tvSym)return;$("tv").innerHTML="";
+ new TradingView.widget({container_id:"tv",symbol:tvSym,interval:tvTf,autosize:true,theme:"dark",style:"1",locale:"cs",timezone:"Europe/Prague",hide_side_toolbar:true,allow_symbol_change:true,withdateranges:true,studies:["Volume@tv-basicstudies"]});}
+function render(d){
+ const s=d.summary,u=d.universe;
+ const st=$("status");st.textContent="Bot: "+s.status;st.className="pill "+(s.halted?"bad":s.status==="běží"?"ok":"warn");
+ const m=$("mkt");m.textContent=s.us_market_open?"US trh otevřený":"US trh zavřený";m.className="pill "+(s.us_market_open?"ok":"");
+ $("c-eq").textContent=usd(s.equity);$("c-eq-s").textContent="start "+usd(s.start_equity,0);
+ const p=$("c-pnl");p.textContent=(s.total_pnl>0?"+":"")+usd(s.total_pnl);p.className="v "+sgn(s.total_pnl);
+ $("c-day").innerHTML=`dnes <span class="${sgn(s.daily_pnl)}">${(s.daily_pnl>0?"+":"")+usd(s.daily_pnl)}</span>`;
+ $("c-pos").textContent=s.open_positions;$("c-pos-s").textContent="max "+s.max_open_positions;
+ $("c-scan").textContent=s.last_scan?tm(s.last_scan).split(" ").pop():"–";$("c-scan-s").textContent=ago(s.last_scan)+` · ${u.scans_24h} skenů/24 h`;
+ $("c-uni").textContent=(u.stocks+u.crypto);$("c-uni-s").textContent=`${u.stocks} akcií · ${u.crypto} krypto · 24 h: ${u.scanned_24h_stocks}+${u.scanned_24h_crypto}`;
+ $("n-pos").textContent=d.positions.length;
+ $("t-pos").innerHTML=table([["Symbol",r=>`<b>${esc(r.symbol)}</b>`],["Strategie",r=>esc(r.strategy)],["Vstup",r=>num(r.entry_price,4)],["Teď",r=>num(r.current_price,4)],
+  ["P&L",r=>usd(r.unrealized_pnl_usd),r=>sgn(r.unrealized_pnl_usd)],["SL",r=>num(r.stop_loss,4)],["TP",r=>num(r.take_profit,4)],["Páka",r=>r.leverage+"x"],["Otevřeno",r=>tm(r.opened_ts)]],d.positions,"Žádná otevřená pozice.");
+ $("n-tr").textContent=d.trades.length;
+ $("t-tr").innerHTML=table([["Zavřeno",r=>tm(r.closed_ts)],["Symbol",r=>`<b>${esc(r.symbol)}</b>`],["Strategie",r=>esc(r.strategy)],["Vstup",r=>num(r.entry_price,4)],["Výstup",r=>num(r.exit_price,4)],
+  ["P&L",r=>usd(r.realized_pnl_usd),r=>sgn(r.realized_pnl_usd)],["R",r=>num(r.r_multiple)],["Důvod",r=>esc(r.exit_reason)]],d.trades,"Zatím žádný uzavřený obchod.");
+ const near=d.near_misses;$("n-near").textContent=near.length;
+ $("t-near").innerHTML=table([["Čas",r=>tm(r.ts)],["Symbol",r=>`<b>${esc(r.symbol)}</b>`],["Výsledek",r=>esc(r.result),r=>r.result==="signál"?"up":"mut"],["Strategie",r=>esc(r.strategy)],["Skóre",r=>num(r.score,0)],["RR",r=>num(r.rr)],["Proč",r=>esc(r.reason),()=>"r"]],near,"Za posledních 24 h žádný kandidát.");
+ $("n-res").textContent=d.scan_results.length;
+ $("t-res").innerHTML=table([["Čas",r=>tm(r.ts)],["Symbol",r=>`<b>${esc(r.symbol)}</b>`],["Výsledek",r=>esc(r.result)],["Cena",r=>num(r.price,4)],["RSI",r=>num(r.rsi,0)],["RVOL",r=>num(r.rvol,1)],["Trend",r=>esc(r.trend)],["Důvod",r=>esc(r.reason),()=>"r"]],d.scan_results,"Žádný sken za 24 h.");
+ $("n-log").textContent=d.scan_log.length;
+ $("t-log").innerHTML=table([["Čas",r=>tm(r.ts)],["Trh",r=>r.scanner==="crypto"?"krypto":"akcie"],["Symbolů",r=>r.symbols],["Analyzováno",r=>r.analyzed],["Signálů",r=>r.signals]],d.scan_log,"Žádný sken za 24 h.");
+ $("t-err").innerHTML=table([["Čas",r=>tm(r.ts)],["Modul",r=>esc(r.module)],["Chyba",r=>esc(r.error_type+": "+r.message),()=>"r"]],d.errors,"Bez chyb.");
+ $("gen").textContent="Vygenerováno "+tm(d.generated_ts)+" (čas Praha).";
+ const sel=$("sym");if(!sel.options.length){const g={};d.tv_symbols.forEach(x=>{(g[x.group]=g[x.group]||[]).push(x)});
+  sel.innerHTML=Object.entries(g).map(([k,v])=>`<optgroup label="${esc(k)}">${v.map(x=>`<option value="${esc(x.tv)}">${esc(x.label)}</option>`).join("")}</optgroup>`).join("");
+  tvSym=sel.value;drawTV();}
+ if(window.LightweightCharts&&d.equity_curve.length){if(!eqChart){eqChart=LightweightCharts.createChart($("eq"),{autoSize:true,layout:{background:{color:"transparent"},textColor:"#8b95a7"},grid:{vertLines:{visible:false},horzLines:{color:"#1f2937"}},timeScale:{timeVisible:true}});
+  eqChart._s=eqChart.addSeries?eqChart.addSeries(LightweightCharts.LineSeries,{color:"#60a5fa",lineWidth:2}):eqChart.addLineSeries({color:"#60a5fa",lineWidth:2});}
+  const seen=new Set();eqChart._s.setData(d.equity_curve.map(([t,v])=>({time:Math.floor(new Date(t)/1000),value:v})).filter(x=>!seen.has(x.time)&&seen.add(x.time)).sort((a,b)=>a.time-b.time));}
+}
+$("sym").onchange=e=>{tvSym=e.target.value;drawTV()};$("tf").onchange=e=>{tvTf=e.target.value;drawTV()};
+async function load(){try{const r=await fetch("data.json?"+Date.now(),{cache:"no-store"});render(await r.json())}catch(e){$("status").textContent="data nedostupná";$("status").className="pill bad"}}
+load();setInterval(load,60000);
+</script>
+</body>
+</html>

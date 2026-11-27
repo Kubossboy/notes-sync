@@ -69,15 +69,18 @@ scoring:
 markets:
   stocks:
     enabled: true
-    watchlist: ["SPY", "QQQ", "AAPL", "MSFT", "NVDA", "TSLA", "AMD", "META"]
+    watchlist: ["SPY", "QQQ", "IWM", "DIA", "SMH", "XLF", "XLE", "XLK", "XLV", "GLD", "SLV", "TLT", "TQQQ", "SOXL", "ARKK", "AAPL", "MSFT", "NVDA", "TSLA", "AMD", "META", "AMZN", "GOOGL", "NFLX", "AVGO", "PLTR", "COIN", "MSTR", "SMCI", "INTC", "MU", "QCOM", "ARM", "TSM", "BABA", "JPM", "BAC", "WFC", "C", "GS", "MS", "V", "MA", "PYPL", "XYZ", "SHOP", "UBER", "ABNB", "CRM", "ORCL", "ADBE", "NOW", "SNOW", "CRWD", "PANW", "NET", "DDOG", "HOOD", "SOFI", "RIVN", "NIO", "F", "GM", "XOM", "CVX", "OXY", "BA", "CAT", "DIS", "NKE", "SBUX", "WMT", "COST", "TGT", "HD", "KO", "PEP", "MCD", "JNJ", "PFE", "MRK", "LLY", "UNH", "ABBV", "CVS", "T", "VZ", "MARA", "RIOT", "APP"]   # 90 liquid US stocks/ETFs, scanned in rotating batches
   crypto:
     enabled: true
-    watchlist: ["BTC-USD", "ETH-USD", "SOL-USD"]
+    watchlist: ["BTC-USD", "ETH-USD", "ZEC-USD", "SOL-USD", "XRP-USD", "NEAR-USD", "BNB-USD", "HYPE-USD", "UNI-USD", "PEPE-USD", "DOGE-USD", "SUI-USD", "LINK-USD", "ENA-USD", "ADA-USD", "LTC-USD", "FET-USD", "BLUR-USD", "WLD-USD", "TAO-USD", "AAVE-USD", "INJ-USD", "PUMP-USD", "ZRO-USD", "SEI-USD", "BCH-USD", "AVAX-USD", "CFG-USD", "XLM-USD", "HBAR-USD", "WLFI-USD", "SKY-USD", "QNT-USD", "BIGTIME-USD", "TRUMP-USD", "FIL-USD", "ONDO-USD", "ARB-USD", "KAVA-USD", "ICP-USD"]   # top 40 by Binance USDT volume, listed on Coinbase too
 
 data:
   stock_sources: ["yahoo", "alpaca"]   # alpaca used only when ALPACA_* keys are set (IEX feed, read-only data)
   crypto_sources: ["coinbase", "kraken", "binance"]   # priority order; all used for cross-checks
   include_prepost: true
+  # D98: divergent/missing data on a core symbol -> global SAFE STATE (unchanged); on any other
+  # wide-universe symbol -> that symbol is quarantined (skipped) for the cycle, the rest keeps trading.
+  core_symbols: ["SPY", "QQQ", "AAPL", "MSFT", "NVDA", "TSLA", "AMD", "META", "BTC-USD", "ETH-USD", "SOL-USD"]
   live_max_age_bars: 2.0
   live_grace_seconds: 60
   stale_after_bars: 5.0
@@ -93,6 +96,9 @@ scanner:
   stock_timeframe: "5m"
   crypto_timeframe: "15m"   # 5m crypto moves are too small vs round-trip costs
   lookback_bars: 400
+  stock_batch_size: 30      # symbols per trade cycle; the cursor rotates through the whole watchlist
+  crypto_batch_size: 14
+  stocks_only_in_market_hours: true
   signal_ttl_bars: 3
   stock_min_avg_dollar_volume: 2000000
   stock_min_price: 5.0
@@ -128,6 +134,7 @@ news:
   catalyst_max_hours: 96
   filings_lookback_days: 7
   form4_per_ticker: 5
+  sec_max_tickers: 12      # rotating slice of the stock watchlist per ingest (SEC fair-access + run time)
   story_similarity: 0.45
   min_tag_confidence: 0.6
   no_news_score: 40

@@ -117,6 +117,7 @@ def test_sec_filing_events_and_insider(settings, db):
     f8k = Filing("NVDA", 1045810, "8-K", "0001-26-1", NOW - timedelta(hours=3), ["1.03"], "a.htm", "8-K")
     f4 = Filing("NVDA", 1045810, "4", "0001-26-2", NOW - timedelta(hours=5), [], "x/f4.xml", "4")
     ne = engine(settings, db, {}, FakeSec({"NVDA": [f8k, f4]}), feeds=[])
+    ne.stocks = ["NVDA"]
     st = ne.ingest(NOW)
     assert st["sources"]["sec_edgar"] == {"status": "ok", "seen": 2, "new": 2}
     c = ne.symbol_context("NVDA", "stock", NOW)

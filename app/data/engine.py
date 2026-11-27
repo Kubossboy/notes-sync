@@ -109,8 +109,12 @@ class MarketDataEngine:
                     alt.warnings.append(f"primary {primary.source} excluded as outlier")
                     result.series = primary = alt
             if result.crosscheck and result.crosscheck.verdict == "divergent":
-                result.halted = self._halt(f"cross-source divergence on {symbol} {timeframe}: "
-                                           f"{result.crosscheck.deviations_bps}")
+                msg = f"cross-source divergence on {symbol} {timeframe}: {result.crosscheck.deviations_bps}"
+                if self._is_core(symbol):
+                    result.halted = self._halt(msg)
+                else:                  # wide-universe symbol: quarantine it for this cycle, keep trading the rest
+                    primary.issues.append("quarantined: " + msg)
+                    log.warning("market data problem (symbol quarantined): %s", msg)
         failed = [a.source for a in attempts if not a.ok]
         if failed:
             primary.warnings.append(f"sources failed: {failed}")
@@ -134,7 +138,10 @@ class MarketDataEngine:
         except DataFormatError as e:
             attempts.append(SourceAttempt(name, False, str(e), "invalid"))
             self.db.log_error(f"data.{name}", e)
-            self._halt(f"invalid payload from {name} for {symbol}: {e}")
+            if self._is_core(symbol):
+                self._halt(f"invalid payload from {name} for {symbol}: {e}")
+            else:
+                log.warning("market data problem (source skipped): %s", f"invalid payload from {name} for {symbol}: {e}")
             return None
         except ProviderError as e:
             attempts.append(SourceAttempt(name, False, str(e), "unreachable"))
@@ -151,7 +158,10 @@ class MarketDataEngine:
                               "error", {"issues": issues[:20]})
             if issues == ["no candles returned"]:
                 return None   # empty answer = missing data, handled by fallback/all-failed path
-            self._halt(f"invalid candles from {name} for {symbol}: {issues[0]}")
+            if self._is_core(symbol):
+                self._halt(f"invalid candles from {name} for {symbol}: {issues[0]}")
+            else:
+                log.warning("market data problem (source skipped): %s", f"invalid candles from {name} for {symbol}: {issues[0]}")
             return None
         label_freshness(series, self.cfg, asof, clock=fetched_at)
         self.persist_candles(series)
@@ -183,7 +193,12 @@ class MarketDataEngine:
         only_unsupported = attempts and all(a.kind == "unsupported" for a in attempts)
         halted = False
         if not only_unsupported:
-            halted = self._halt(f"no valid market data for {symbol} {timeframe} from any source")
+            msg = f"no valid market data for {symbol} {timeframe} from any source"
+            if self._is_core(symbol):
+                halted = self._halt(msg)
+            else:
+                series.issues.append("quarantined: " + msg)
+                log.warning("market data problem (symbol quarantined): %s", msg)
         return FetchResult(series, attempts, halted=halted)
 
     # ------------------------------------------------------------ quotes
@@ -277,6 +292,11 @@ class MarketDataEngine:
                        r["volume"], True, r["session"]) for r in reversed(rows)]
 
     # ------------------------------------------------------------ safety
+    def _is_core(self, symbol: str) -> bool:
+        """Core symbols keep the global SAFE STATE on bad data; others are only quarantined (D98)."""
+        core = self.cfg.core_symbols
+        return not core or symbol.upper() in core
+
     def _halt(self, reason: str) -> bool:
         log.error("market data problem: %s", reason)
         self.safe.halt(reason, module="data")

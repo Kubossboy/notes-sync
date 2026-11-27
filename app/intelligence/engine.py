@@ -222,7 +222,8 @@ class NewsEngine:
             stats["sources"][name] = {"status": status, "seen": seen, "new": new, **({"error": err} if err else {})}
 
         for src in self.feeds:
-            urls = [src.url.format(tickers=t) for t in self.stocks] if src.per_ticker else [src.url]
+            chunks = [",".join(self.stocks[i:i + 10]) for i in range(0, len(self.stocks), 10)]
+            urls = [src.url.format(tickers=t) for t in chunks] if src.per_ticker else [src.url]
             try:
                 items, errs = [], []
                 for url in urls:
@@ -240,6 +241,9 @@ class NewsEngine:
             ok += 1
             new = 0
             for raw in items:
+                if self.db.conn.execute("SELECT 1 FROM news_events WHERE content_hash=?",
+                                        (event_hash(src.name, raw.title, raw.url),)).fetchone():
+                    continue        # already stored: skip the (slow) FinBERT pass
                 if self.store(self.analyze(raw, src, now), recent, now):
                     new += 1
             stats["seen"] += len(items); stats["new"] += new
@@ -249,7 +253,13 @@ class NewsEngine:
         since = now - timedelta(days=self.cfg.filings_lookback_days)
         sec_seen = sec_new = 0
         try:
-            for t in self.stocks:
+            n = self.cfg.sec_max_tickers
+            sec_syms = list(self.stocks)
+            if 0 < n < len(sec_syms):          # big watchlist: rotate through it, n tickers per ingest
+                cur = int(self.db.get_state("sec_cursor", 0) or 0) % len(sec_syms)
+                sec_syms = (sec_syms + sec_syms)[cur:cur + n]
+                self.db.set_state("sec_cursor", (cur + n) % len(self.stocks))
+            for t in sec_syms:
                 filings = self.sec.recent_filings(t, since)
                 f4 = 0
                 for f in filings:

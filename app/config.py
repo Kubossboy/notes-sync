@@ -156,6 +156,7 @@ class DataSection(_Strict):
     stock_sources: list[Literal["yahoo", "alpaca"]] = ["yahoo", "alpaca"]
     crypto_sources: list[Literal["coinbase", "kraken", "binance"]] = ["coinbase", "kraken", "binance"]
     include_prepost: bool = True
+    core_symbols: list[str] = []      # bad data on these halts everything; empty = every symbol halts
     live_max_age_bars: float = Field(2.0, gt=0)      # last complete bar closed <= N bars ago -> live
     live_grace_seconds: float = Field(60, ge=0)
     stale_after_bars: float = Field(5.0, gt=0)       # older than N bars while market open -> stale
@@ -188,6 +189,9 @@ class ScannerSection(_Strict):
     stock_timeframe: Literal["1m", "5m", "15m", "1h"] = "5m"
     crypto_timeframe: Literal["1m", "5m", "15m", "1h"] = "15m"
     lookback_bars: int = Field(400, ge=60, le=1000)
+    stock_batch_size: int = Field(0, ge=0)    # 0 = whole watchlist every cycle
+    crypto_batch_size: int = Field(0, ge=0)
+    stocks_only_in_market_hours: bool = False
     signal_ttl_bars: int = Field(3, ge=1)
     stock_min_avg_dollar_volume: float = Field(2_000_000, ge=0)   # per bar, last 20 regular bars
     stock_min_price: float = Field(5.0, gt=0)
@@ -212,6 +216,7 @@ class NewsSection(_Strict):
     catalyst_max_hours: float = Field(96, gt=0)       # hard cap (covers Friday after-close -> Monday)
     filings_lookback_days: int = Field(7, ge=1, le=60)
     form4_per_ticker: int = Field(5, ge=0, le=20)
+    sec_max_tickers: int = Field(0, ge=0)          # 0 = all watchlist stocks per ingest
     story_similarity: float = Field(0.45, gt=0, lt=1)
     min_tag_confidence: float = Field(0.6, gt=0, le=1)  # summary-only mentions (0.45) don't count
     no_news_score: float = Field(40, ge=0, le=100)    # verified "no catalyst" is weaker than neutral

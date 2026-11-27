@@ -17,6 +17,9 @@ env:
   ALPACA_API_SECRET_KEY: ${{ secrets.ALPACA_API_SECRET_KEY }}
   CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
   CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+  # fixed dashboard project + URL; without these every run created a new random Pages project
+  ATLAS_PUBLISH_PROJECT: ${{ secrets.ATLAS_PUBLISH_PROJECT }}
+  ATLAS_PUBLISH_SLUG: ${{ secrets.ATLAS_PUBLISH_SLUG }}
 
 jobs:
   paper:
@@ -68,7 +71,13 @@ jobs:
           done
 
       - name: Export dashboard and publish to Cloudflare Pages
-        run: bash scripts/publish.sh
+        run: |
+          set -euo pipefail
+          if [ -z "${ATLAS_PUBLISH_PROJECT:-}" ] || [ -z "${ATLAS_PUBLISH_SLUG:-}" ]; then
+            echo "missing ATLAS_PUBLISH_PROJECT / ATLAS_PUBLISH_SLUG secrets; refusing to create a new dashboard URL" >&2
+            exit 1
+          fi
+          bash scripts/publish.sh
 
       - name: Commit ledger back to state branch
         run: |
