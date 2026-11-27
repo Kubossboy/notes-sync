@@ -247,6 +247,7 @@ class Scanner:
                     "news": None if ctx.news is None else {k: ctx.news[k] for k in (
                         "aggregate", "events", "negative_high_verified", "positive_catalysts", "unexpected", "top")},
                     "sentiment": ctx.sentiment, "market_trend": self._market_trend,
+                    "regime": getattr(self, "_regime", None), "features": _features(ctx, plan.entry),  # D104 review
                     "note": ("strategy validated out-of-sample (still not a guarantee)" if quant["state"] == "validated"
                              else "FORWARD PAPER TEST - unvalidated, internal ledger only" if quant["state"] == "forward_test"
                              else "PROMOTED by the shadow forward test (live evidence, not a guarantee)"
@@ -335,3 +336,19 @@ class Scanner:
             "SELECT * FROM orderbook_snapshots WHERE symbol=? AND source=? ORDER BY id DESC LIMIT ?",
             (sym, source, n)).fetchall()
         return [dict(r) for r in rows]
+
+
+def _features(ctx, entry: float) -> dict:
+    """D104: entry-time features for the post-trade review (rsi14, atr14, rvol20, distance to resistance in ATR)."""
+    out = {}
+    try:
+        last = ctx.last
+        for k in ("rsi14", "atr14", "rvol20"):
+            v = last.get(k)
+            out[k] = round(float(v), 4) if v is not None and v == v else None
+        atr = out.get("atr14")
+        res = sorted(L["price"] for L in (ctx.levels or []) if "high" in L.get("kinds", []) and L["price"] > entry)
+        out["res_dist_atr"] = round((res[0] - entry) / atr, 2) if res and atr else None
+    except Exception:
+        pass
+    return out

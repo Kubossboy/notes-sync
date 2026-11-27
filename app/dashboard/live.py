@@ -102,6 +102,36 @@ def _cycles(runs: list[dict], executed_by_run: dict, ctx: _Ctx, limit: int = 10)
     return out
 
 
+def learning_view(db) -> dict:
+    """D104 'Learning' card: parameter changes (var/params.json), pauses / size changes, lessons, loss causes."""
+    from app.learning import params as LP
+    from app.learning.review import CAUSE_TEXT
+    out = {"changes": [], "events": [], "lessons": [], "causes": [], "weekly": None, "reviewed": 0}
+    try:
+        doc = LP.load()
+        out["changes"] = [{"ts": h["ts"], "text": LP.sentence(h)} for h in reversed(doc["history"][-6:])]
+        lr = doc.get("last_run")
+        if lr:
+            s = "; ".join(f"{'Overnight dip-buy' if g == 'rsi2_swing' else 'crypto'}: {d}" for g, d in lr["summary"].items())
+            out["weekly"] = {"ts": lr["ts"], "text": s}
+        tables = {r[0] for r in db.conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if "learning_events" in tables:
+            out["events"] = [{"ts": r["ts"], "text": r["detail"]} for r in db.conn.execute(
+                "SELECT ts, detail FROM learning_events ORDER BY id DESC LIMIT 6")]
+            out["lessons"] = [{"ts": r["ts"], "text": f"{r['symbol']}: {r['lesson']}"} for r in db.conn.execute(
+                "SELECT ts, symbol, lesson FROM trade_reviews WHERE lesson IS NOT NULL ORDER BY id DESC LIMIT 3")]
+            cnt: dict = {}
+            for (c,) in db.conn.execute("SELECT causes FROM trade_reviews WHERE outcome='loss' ORDER BY id DESC LIMIT 50"):
+                for t in (c or "").split(","):
+                    if t:
+                        cnt[t] = cnt.get(t, 0) + 1
+            out["causes"] = [{"text": CAUSE_TEXT.get(k, k), "n": v} for k, v in sorted(cnt.items(), key=lambda kv: -kv[1])[:4]]
+            out["reviewed"] = db.conn.execute("SELECT COUNT(*) FROM trade_reviews").fetchone()[0]
+    except Exception:
+        pass
+    return out
+
+
 def llm_view(settings: Settings, regs: dict) -> dict:
     b = regs.get("llm_budget") or {}
     return {"enabled": settings.llm.enabled, "spent_s": b.get("spent"), "budget_s": settings.llm.budget_s,
@@ -144,6 +174,7 @@ def build_view(settings: Settings, db_path=None, now: datetime | None = None, li
         executed = _rows(db, "SELECT ts, symbol, strategy, scan_run_id, entry_price, stop_loss, take_profit FROM signals "
                              "WHERE status='executed' ORDER BY id DESC LIMIT 50")
         eq = db.conn.execute("SELECT ts, equity_usd FROM equity_snapshots ORDER BY id").fetchall()
+        learning = learning_view(db)
         whys = {r["symbol"]: json.loads(r["evidence_json"] or "{}").get("why") for r in _rows(
             db, "SELECT p.symbol, s.evidence_json FROM positions p JOIN signals s ON s.id = p.signal_id "
                 "WHERE p.status = 'open'", ())}
@@ -311,4 +342,5 @@ def build_view(settings: Settings, db_path=None, now: datetime | None = None, li
         "news_summary": None if not summ else {"ts": summ["ts"], "points": summ["text"].split("\n"),
                                                "model": summ.get("model")},
         "llm": llm_view(settings, regs),
+        "learning": learning,
     }

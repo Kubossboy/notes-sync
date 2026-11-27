@@ -344,6 +344,27 @@ class SwingSection(_Strict):
     score: float = Field(70, ge=0, le=100)         # rule-based setup: fixed score
 
 
+class LearningSection(_Strict):
+    """D104 adaptive learning. Can only pause / shrink strategies and move bounded grid params (app/learning/params.py);
+    it never touches risk limits, leverage caps, min R:R, the kill switch or the fee model."""
+    enabled: bool = False
+    window: int = Field(20, ge=5, le=100)              # rolling scorecard: last N closed trades per strategy
+    min_trades: int = Field(8, ge=3)                   # before judging a strategy
+    pause_consec_losses: int = Field(6, ge=2)
+    pause_avg_r: float = Field(-0.3, le=0)             # avg R over the window at/below this -> pause
+    reduce_avg_r: float = Field(0.0, le=0.5)           # avg R below this -> half size
+    reduce_mult: float = Field(0.5, gt=0, le=1)        # size multiplier when reduced (never > 1)
+    resume_min_shadow: int = Field(5, ge=1)            # paused: shadow trades needed to come back
+    resume_avg_r: float = Field(0.0)
+    lessons_per_cycle: int = Field(1, ge=0, le=3)      # AI lessons (inside the LLM time budget)
+    revert_min_trades: int = Field(10, ge=3)
+    revert_drop_r: float = Field(0.15, gt=0)
+    revert_floor_r: float = Field(-0.25)
+    min_oos_trades_swing: int = Field(30, ge=10)
+    min_oos_trades_crypto: int = Field(20, ge=10)
+    min_gain_r: float = Field(0.02, ge=0)
+
+
 class LLMSection(_Strict):
     """D102 local Qwen2.5-3B-Instruct (llama-server on CPU). Only summarises news and may VETO an entry."""
     enabled: bool = False
@@ -375,6 +396,7 @@ class Settings(_Strict):
     regime: RegimeSection = RegimeSection()
     llm: LLMSection = LLMSection()
     swing: SwingSection = SwingSection()
+    learning: LearningSection = LearningSection()
 
     def config_hash(self) -> str:
         blob = json.dumps(self.model_dump(mode="json"), sort_keys=True).encode()
@@ -420,6 +442,12 @@ def load_settings(path: str | Path | None = None, overrides: dict | None = None)
     extra = path or os.environ.get("ATLAS_CONFIG")
     if extra:
         raw = _deep_merge(raw, yaml.safe_load(Path(extra).read_text(encoding="utf-8")) or {})
+    if os.environ.get("ATLAS_PARAMS"):               # D104: learned, bounded grid values only (var/params.json)
+        from app.learning import params as LP
+        base = {k: (raw.get(k.split(".")[0]) or {}).get(k.split(".", 1)[1]) for k in LP.GRID}
+        learned = LP.valid(LP.load()["params"], {k: v for k, v in base.items() if v is not None})
+        if learned:
+            raw = _deep_merge(raw, LP.as_overrides(learned))
     if overrides:
         raw = _deep_merge(raw, overrides)
     return Settings.model_validate(raw)

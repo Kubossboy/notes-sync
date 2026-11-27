@@ -39,7 +39,7 @@ def _get(session, url, params=None, headers=None, tries=4):
 
 
 def coinbase_history(symbol: str, tf: str, start: datetime, end: datetime, session=None) -> pd.DataFrame:
-    gran = {"5m": 300, "15m": 900, "1h": 3600}[tf]
+    gran = {"5m": 300, "15m": 900, "1h": 3600, "1d": 86400}[tf]
     s = session or requests.Session()
     url = f"https://api.exchange.coinbase.com/products/{symbol}/candles"
     rows, t = [], start
@@ -62,7 +62,7 @@ def alpaca_history(symbol: str, tf: str, start: datetime, end: datetime, secrets
     url = f"https://data.alpaca.markets/v2/stocks/{symbol}/bars"
     hdr = {"APCA-API-KEY-ID": secrets.alpaca_api_key_id.get_secret_value(),
            "APCA-API-SECRET-KEY": secrets.alpaca_api_secret_key.get_secret_value()}
-    params = {"timeframe": {"5m": "5Min", "15m": "15Min", "1m": "1Min"}[tf], "start": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+    params = {"timeframe": {"5m": "5Min", "15m": "15Min", "1m": "1Min", "1d": "1Day"}[tf], "start": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
               "end": end.strftime("%Y-%m-%dT%H:%M:%SZ"), "limit": 10000, "feed": "iex", "adjustment": "split",
               "sort": "asc"}
     rows = []
@@ -76,7 +76,7 @@ def alpaca_history(symbol: str, tf: str, start: datetime, end: datetime, secrets
         time.sleep(0.35)                                  # free plan: 200 req/min
     df = pd.DataFrame(rows).rename(columns={"o": "open", "h": "high", "l": "low", "c": "close", "v": "volume"})
     df.index = pd.to_datetime(df.pop("t"), utc=True)
-    return _finish(df, start, end, {"5m": 300, "15m": 900, "1m": 60}[tf])
+    return _finish(df, start, end, {"5m": 300, "15m": 900, "1m": 60, "1d": 86400}[tf])
 
 
 def yahoo_history(symbol: str, tf: str = "5m", session=None) -> pd.DataFrame:
@@ -121,7 +121,8 @@ def load(source: str, symbol: str, tf: str, days: int, secrets: Secrets | None =
     if source == "coinbase":
         df = coinbase_history(symbol, tf, start, end)
     elif source == "alpaca":
-        df = with_sessions(alpaca_history(symbol, tf, start, end, secrets or Secrets()))
+        df = alpaca_history(symbol, tf, start, end, secrets or Secrets())
+        df = df if tf == "1d" else with_sessions(df)
     elif source == "yahoo":
         df = with_sessions(yahoo_history(symbol, tf))
     else:

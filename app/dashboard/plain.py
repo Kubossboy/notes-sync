@@ -76,6 +76,7 @@ RULES: list[tuple[str, object]] = [
     (r"swing_entry_window.*", lambda m, c: "Overnight dip-buy only enters in the last 15 minutes before the close."),
     (r"swing: max overnight positions", lambda m, c: "Already holding the maximum number of overnight trades."),
     (r"regime unknown: overnight swing off", lambda m, c: "Market mood unknown, so no overnight trades today."),
+    (r"learning: strategy paused \((.+)\)", lambda m, c: f"Paused by learning after {m[1]}; tracked on paper until it recovers."),
     (r"llm veto: (.+)", lambda m, c: f"Blocked by the AI final check: {m[1]}"),
     (r"regime (bull|bear|sideways)/(high|low): strategy off in this market",
      lambda m, c: f"Skipped: this strategy is off in {_REG[m[1]]}, {m[2]}-volatility markets."),

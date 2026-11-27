@@ -80,6 +80,7 @@ class Proposal:
     data_status: str | None
     validation_status: str | None = None     # validated | forward_test | shadow_promoted | failed | unavailable
     leverage: float = 1.0                    # D94: > 1 only for leveraged main-ledger entries
+    risk_mult: float = 1.0                   # D104: learning scorecard may only SHRINK the risk budget (<= 1)
 
     @classmethod
     def from_signal_row(cls, r) -> "Proposal":
@@ -258,8 +259,9 @@ class RiskEngine:
                 self.r.max_entry_drift_r, "R units between signal entry and expected fill")
             fee_b = self.costs.fee_bps(ac) / 1e4
             daily_rem = max(0.0, daily_limit - st.daily_loss)
+            rp = LV.risk_pct(self.s) if L > 1 else self.r.max_risk_per_trade_pct
             z = size_position(self.costs, self.s, ac, fill.price, p.stop, p.target, st.equity, st.cash, daily_rem,
-                              L, LV.risk_pct(self.s) if L > 1 else None)
+                              L, rp * max(0.0, min(1.0, p.risk_mult)))
             qty, notional, planned, budget, fees, rr = z.qty, z.notional, z.planned_risk, z.budget, z.fees, z.rr_net
             remaining_day, comm = daily_rem, 2 * self.ex.commission_per_trade_usd
             add("position_size_positive", qty > 0, qty, None, "after rounding to lot step")

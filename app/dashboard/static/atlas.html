@@ -115,6 +115,8 @@ th{color:var(--mut);font-weight:600;font-size:11.5px}td.r{white-space:normal;min
   <div class="stat"><div class="k">Watching</div><div class="v" id="s-uni">–</div><div class="s" id="s-uni-s"></div></div>
 </div>
 
+<section class="card"><h2>Learning <span class="k">the bot reviews its own trades</span></h2><div id="learn"></div></section>
+
 <section class="card"><h2>News summary <span class="k" id="ns-k">AI (Qwen 3B), once per run</span></h2><div id="nsum"></div></section>
 
 <section class="card"><h2>Market mood <span class="k">decides which strategies may trade</span></h2><div id="regime"></div></section>
@@ -239,6 +241,14 @@ function render(d){
  $("n-res").textContent=d.scan_results.length;
  $("t-res").innerHTML=`<div class="legend2"><b>RSI</b> (0–100) shows how hard the price has been pushed: above 70 = overheated, below 30 = oversold, around 50 = calm. <b>Trend</b> = the direction of the price over recent hours (Rising, Falling or Sideways).</div>`+
   (d.scan_results.length?`<div class="cards2">${d.scan_results.map(r=>symCard(r,d.best_near&&r.symbol===d.best_near.symbol&&r.result==="Rejected")).join("")}</div>`:empty("No checks in the last 24 h."));
+ {const L=d.learning||{};const li=a=>a.map(x=>`<li>${esc(x.text)}${x.n?` <span class="mut">(${x.n}x)</span>`:""}${x.ts?` <span class="mut">${tm(x.ts)}</span>`:""}</li>`).join("");
+  const parts=[];
+  if(L.changes&&L.changes.length)parts.push(`<b>Setting changes</b><ul class="ns">${li(L.changes)}</ul>`);
+  if(L.events&&L.events.length)parts.push(`<b>Strategy pauses &amp; size</b><ul class="ns">${li(L.events)}</ul>`);
+  if(L.causes&&L.causes.length)parts.push(`<b>Most common reasons for losses</b><ul class="ns">${li(L.causes)}</ul>`);
+  if(L.lessons&&L.lessons.length)parts.push(`<b>Latest lessons (AI)</b><ul class="ns">${li(L.lessons)}</ul>`);
+  if(L.weekly)parts.push(`<div class="mut">Weekly self-check ${tm(L.weekly.ts)}: ${esc(L.weekly.text)}</div>`);
+  $("learn").innerHTML=parts.length?parts.join("")+`<div class="mut">${L.reviewed||0} trades reviewed. Learning can only pause or shrink strategies and make small tested setting changes; risk limits never change.</div>`:empty("Nothing learned yet: reviews start as trades close.");}
  $("nsum").innerHTML=d.news_summary?`<ul class="ns">${d.news_summary.points.map(x=>`<li>${esc(x.replace(/^- /,""))}</li>`).join("")}</ul><div class="mut">Updated ${tm(d.news_summary.ts)}</div>`:empty("No AI summary yet (the model may still be loading).");
  $("regime").innerHTML=(d.regime||[]).map(r=>`<div class="ic2"><div class="top"><div><div class="sym">${esc(r.market)}${r.benchmark?` <span class="mut">(${esc(r.benchmark)})</span>`:""}</div><div class="meta">${esc(r.allowed||"")}</div></div><span class="badge ${r.tone}">${esc(r.text||"")}</span></div></div>`).join("")||empty("Not measured yet.");
  $("n-err").textContent=d.errors.length;

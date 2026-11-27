@@ -298,6 +298,18 @@ class PaperTrader:
 
     def execute_signal(self, row, now: datetime) -> dict:
         p = Proposal.from_signal_row(row)
+        if self.s.learning.enabled:                  # D104: scorecard may pause a strategy or shrink its size
+            from app.learning.scorecard import status
+            sc = status(self.db, p.strategy)
+            if sc["state"] == "paused":
+                why = f"learning: strategy paused ({sc.get('why') or 'poor recent results'})"
+                self.db.insert("strategy_decisions", {"ts": now.isoformat(), "signal_id": p.signal_id,
+                                                      "decision": "reject", "reason": why})
+                return {"signal_id": p.signal_id, "symbol": p.symbol, "strategy": p.strategy, "approved": False,
+                        "reason": why, "qty": 0, "planned_risk_usd": 0, "rr_net": None}
+            if sc["state"] == "reduced":
+                import dataclasses
+                p = dataclasses.replace(p, risk_mult=min(1.0, float(sc.get("mult") or 1.0)))
         if p.asset_class == AssetClass.STOCK:
             from app.data.calendar import regular_session_open
             if not regular_session_open(now):
@@ -370,6 +382,13 @@ class PaperTrader:
         report["shadow"] = {"managed": self._shadow(lambda: self.shadow.manage(
             self._shadow_bars(now), now, (lambda s: self.bars15(s, now)) if self.s.execution.trade_management_enabled
             else None)), "opened": []}
+        if self.s.learning.enabled:                                   # D104: review closed trades, rescore strategies
+            try:
+                from app.learning import review, scorecard
+                report["learning"] = {"reviewed": len(review.review_closed(self.db, self.s, now))}
+                scorecard.update(self.db, self.s.learning, now)
+            except Exception as e:
+                self.db.log_error("learning", e)
         if scan and self.scanner is not None and self.safe.trading_allowed():
             run_ids = []
             for ac in (AssetClass.STOCK, AssetClass.CRYPTO):
@@ -413,6 +432,9 @@ class PaperTrader:
             try:
                 from app.llm import LocalLLM
                 LocalLLM(self.s, self.db).summarize_news(now)
+                if self.s.learning.enabled and self.s.learning.lessons_per_cycle:      # D104: lessons, last in line
+                    from app.learning.review import add_lessons
+                    add_lessons(self.db, LocalLLM(self.s, self.db), self.s.learning.lessons_per_cycle)
             except Exception as e:                                  # never let the LLM break a cycle
                 self.db.log_error("llm", e)
         st = self.ledger.state(now)

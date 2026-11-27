@@ -443,3 +443,34 @@ Rule: a strategy is enabled in a regime only if that cell is positive both IS an
   entry reason; exits "Bounced back above its 5-day average" / "Held the maximum 10 trading days".
 - **Note:** the Alpaca paper mirror sends stock orders as `day` orders; the internal ledger stays the source of truth
   and closes the mirror when it exits.
+
+## D104 — Adaptive learning: post-trade reviews, live scorecard, weekly bounded self-tuning (2026-11-27)
+- **Post-trade review** (`app/learning/review.py`, table `trade_reviews`): every closed main AND shadow trade once,
+  with entry features (strategy, regime, RSI, ATR, volume ratio, distance to resistance in ATR, NY hour, FinBERT,
+  Qwen verdict, entry drift, hold time; the scanner now stores `features` + `regime` in the signal evidence). Loss
+  causes by rule: `gap` (filled below the stop), `noise` (stop < 1 ATR or stopped within 20 min), `against_trend`,
+  `news` (FinBERT <= -0.15 at entry or negative headline while held), `late_entry` (RSI >= 70, drift > 0.15 R or
+  resistance < 0.5 ATR away), else `unclear`. Optional one-sentence Qwen lesson (1 per cycle, after the veto and the
+  summary, inside the 60 s budget).
+- **Live scorecard** (`app/learning/scorecard.py`): last 20 main-ledger trades per strategy (+ per-regime view).
+  6 losses in a row or avg <= -0.3 R (>= 8 trades) -> paused (signals rejected, "Paused by learning ..."); the shadow
+  ledger keeps tracking it and it is re-enabled once >= 5 shadow trades since the pause average > 0 R. Avg < 0 R ->
+  half risk budget (`Proposal.risk_mult`, clamped to <= 1: learning can never increase size).
+- **Weekly self-tuning** (`.github/workflows/learn.yml`, Sundays 03:17 UTC + manual): walk-forward backtest of the
+  current values vs every one-step neighbour in a bounded grid (`app/learning/params.py`): overnight dip-buy RSI
+  threshold 3–7 and stop 1.5–3 x ATR (daily bars, last 365 days = OOS); crypto ATR stop 1.25–2, target 1.75–3,
+  volume-ratio floor 0–2 (15m, 60 d, last 20 d = OOS), regime-gated, live fee/slippage model. Adopt only if better
+  in-sample AND >= +0.02 R better out-of-sample with >= 30 (swing) / 20 (crypto) OOS trades and positive OOS
+  expectancy; max one step per group per week. Auto-revert first: if >= 10 live trades after a change average
+  0.15 R worse than before (or < -0.25 R), the old value returns.
+- **Hard rails never learnable:** only GRID keys are read from the params file (anything else is ignored); target/stop
+  >= 1.2; risk limits, leverage caps, min R:R gates, kill switch and fee model are not in the grid.
+- **Versioning:** `var/params.json` (version, params, history with reasons, last weekly run) is committed to the
+  `state` branch by the weekly job and loaded by the trade loop (`ATLAS_PARAMS`); pauses / size changes go to the
+  `learning_events` table and `var/learning_log.json` on `state`. `scripts/commit_state.sh` commits single files to
+  `state` without clobbering the other writer (retry on a push race).
+- **Dashboard:** "Learning" card: setting changes, pauses / size changes, most common loss causes, latest AI lessons,
+  last weekly self-check.
+- **First local run (2026-11-27):** crypto: no change (neighbours worse in-sample; tighter R:R ratios fail the
+  1.2 gate). Overnight dip-buy: stop 2.0 -> 1.5 x ATR would pass (IS +0.245 vs +0.198 R, OOS +0.334 vs +0.229 R over 48
+  trades), so the first scheduled run may adopt it.

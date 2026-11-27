@@ -211,3 +211,9 @@ swing:
   atr_mult: 2.0
   max_hold_days: 10
   max_positions: 2
+
+# D104: adaptive learning (post-trade reviews, rolling scorecard -> pause / half size, weekly bounded self-tuning).
+learning:
+  enabled: true
+  window: 20
+  pause_consec_losses: 6

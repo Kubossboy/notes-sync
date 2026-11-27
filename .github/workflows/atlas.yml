@@ -20,6 +20,7 @@ env:
   # fixed dashboard project + URL; without these every run created a new random Pages project
   ATLAS_PUBLISH_PROJECT: ${{ secrets.ATLAS_PUBLISH_PROJECT }}
   ATLAS_PUBLISH_SLUG: ${{ secrets.ATLAS_PUBLISH_SLUG }}
+  ATLAS_PARAMS: var/params.json   # D104 learned (bounded) parameters, versioned on the state branch
 
 jobs:
   paper:
@@ -94,6 +95,7 @@ jobs:
           if git fetch origin state:state; then
             git show state:var/atlas.sqlite3 > var/atlas.sqlite3
             echo "restored var/atlas.sqlite3 from state"
+            git show state:var/params.json > var/params.json 2>/dev/null || rm -f var/params.json
           else
             echo "no state branch yet; a fresh ledger will be created on first trade"
           fi
@@ -127,29 +129,8 @@ jobs:
         run: |
           set -euo pipefail
           test -f var/atlas.sqlite3
-          mkdir -p "${RUNNER_TEMP}/st/var"
-          cp -f var/atlas.sqlite3 "${RUNNER_TEMP}/st/var/atlas.sqlite3"
-          export GIT_INDEX_FILE="${RUNNER_TEMP}/state.index"
-          export GIT_WORK_TREE="${RUNNER_TEMP}/st"
-          git config user.name "sync"
-          git config user.email "atlas@localhost"
-          rm -f "$GIT_INDEX_FILE"
-          if git fetch origin state:state; then
-            git read-tree state
-          fi
-          git add -f var/atlas.sqlite3
-          TREE=$(git write-tree)
-          PARENT=$(git rev-parse --verify state 2>/dev/null || true)
-          if [ -n "$PARENT" ] && [ "$(git rev-parse "$PARENT^{tree}")" = "$TREE" ]; then
-            echo "state unchanged"
-            exit 0
-          fi
-          if [ -n "$PARENT" ]; then
-            COMMIT=$(git commit-tree "$TREE" -p "$PARENT" -m "Update paper ledger")
-          else
-            COMMIT=$(git commit-tree "$TREE" -m "Initial paper ledger")
-          fi
-          git push origin "$COMMIT":refs/heads/state
+          .venv/bin/python -m app.main learn export --out var/learning_log.json || echo "learning log export failed"
+          bash scripts/commit_state.sh "Update paper ledger" var/atlas.sqlite3 var/learning_log.json
 
       - name: Chain next run
         if: always() && !cancelled()

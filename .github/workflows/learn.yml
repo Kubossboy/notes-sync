@@ -1,0 +1,46 @@
+# D104 weekly self-tuning (paper research only). Re-runs the walk-forward backtests on a small bounded grid,
+# adopts at most one tested small step per strategy group, auto-reverts degraded changes, and commits the
+# versioned var/params.json to the state branch. Never touches risk limits, leverage caps, min R:R, kill switch, fees.
+name: learn
+on:
+  schedule:
+    - cron: "17 3 * * 0"      # Sundays 03:17 UTC
+  workflow_dispatch:
+concurrency:
+  group: atlas-learn
+  cancel-in-progress: false
+permissions:
+  contents: write
+env:
+  PYTHONUNBUFFERED: "1"
+  ALPACA_API_KEY_ID: ${{ secrets.ALPACA_API_KEY_ID }}
+  ALPACA_API_SECRET_KEY: ${{ secrets.ALPACA_API_SECRET_KEY }}
+  ATLAS_PARAMS: var/params.json
+
+jobs:
+  tune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install deps (CPU torch)
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -U pip
+          .venv/bin/pip install --index-url https://download.pytorch.org/whl/cpu torch==2.15.0
+          .venv/bin/pip install -r requirements.txt
+      - name: Restore ledger (read-only copy) and learned params from state
+        run: |
+          mkdir -p var
+          git fetch origin state:state
+          git show state:var/atlas.sqlite3 > var/atlas.sqlite3
+          git show state:var/params.json > var/params.json 2>/dev/null || rm -f var/params.json
+      - name: Weekly self-tuning
+        run: .venv/bin/python -m app.main learn weekly | tee "$RUNNER_TEMP/learn.json"
+      - name: Commit versioned params to state branch
+        run: bash scripts/commit_state.sh "Learning - weekly params" var/params.json

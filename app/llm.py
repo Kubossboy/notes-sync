@@ -159,3 +159,21 @@ class LocalLLM:
         self.db.set_state(LOG_KEY, lg)
         self.db.log_event("llm_" + verdict["decision"].lower(), "llm",
                           f"{sig['symbol']}: {verdict['decision']} - {verdict['reason']}"[:300])
+
+
+# ---------------------------------------------------------------- D104: one-sentence lesson for a closed trade
+SYSTEM_LESSON = ("You review one closed paper trade of a trading bot. Write ONE short plain-English sentence (max 25 "
+                 "words) with the most useful lesson, based only on the facts given. No advice to change risk limits.")
+LESSON_SCHEMA = {"type": "object", "properties": {"lesson": {"type": "string"}}, "required": ["lesson"]}
+
+
+def lesson(llm: "LocalLLM", facts: str) -> str | None:
+    txt = llm._chat(SYSTEM_LESSON, facts, 60, "lesson", LESSON_SCHEMA)
+    if not txt:
+        return None
+    try:
+        s = " ".join(str(json.loads(txt)["lesson"]).split())[:220]
+        return s or None
+    except Exception as e:
+        llm._fallback("lesson", f"bad output ({type(e).__name__})")
+        return None
