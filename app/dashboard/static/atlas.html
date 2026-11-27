@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="cs">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -32,12 +32,8 @@ header{display:flex;justify-content:space-between;align-items:center;margin-bott
 .stat .v{font-size:20px;font-weight:750}.stat .s{color:var(--mut);font-size:11.5px;margin-top:2px}
 h2{font-size:16px;margin:0 0 12px;display:flex;justify-content:space-between;align-items:center}
 h2 .tag{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:var(--grad);color:#fff}
-.step{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--line)}
-.step:first-of-type{border-top:0}
 .ic{flex:0 0 40px;height:40px;border-radius:13px;display:grid;place-items:center;background:var(--grad)}
 .ic svg{width:20px;height:20px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-.step .t{flex:1;min-width:0}.step .l{font-weight:700;font-size:14px}
-.step .x{color:var(--mut);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cnt{flex:0 0 auto;min-width:40px;text-align:center;padding:5px 10px;border-radius:999px;background:#25182f;color:#ff8ac4;font-weight:800;font-size:13px}
 .log{font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;max-height:340px;overflow:auto}
 .log div{padding:3px 0;border-bottom:1px dashed #1f1f30;word-break:break-word}
@@ -64,45 +60,81 @@ th{color:var(--mut);font-weight:600;font-size:11.5px}td.r{white-space:normal;min
 .up{color:var(--up)}.dn{color:var(--dn)}.mut{color:var(--mut)}.empty{color:var(--mut);padding:6px 4px}
 .foot{color:var(--mut);font-size:12px;text-align:center;margin-top:18px}.foot a{color:#ff8ac4}
 @media(max-width:520px){.big{font-size:38px}.stat .v{font-size:17px}#tv{height:360px}.tchart{height:240px}}
+
+.step{border-top:1px solid var(--line)}.step:first-of-type{border-top:0}
+.step>summary{padding:11px 0;display:flex;align-items:center;gap:12px;font-weight:400}
+.step>summary:after{content:"›";margin-left:4px}
+.step .t{flex:1;min-width:0}.step .l{font-weight:700;font-size:14px}
+.step .x{color:var(--mut);font-size:12.5px;line-height:1.35}
+.sbody{padding:0 0 12px 52px}
+.desc{color:#c9c9da;font-size:13px;background:#1a1a29;border-radius:12px;padding:9px 11px;margin-bottom:8px}
+.items div{font-size:13px;padding:5px 0;border-bottom:1px dashed #23233a}
+.items .ts{color:#6c6c84;font:12px ui-monospace,Menlo,monospace;margin-right:6px}
+.items div{color:#d6d6e4;position:relative;padding-left:14px}.items div:before{content:"";position:absolute;left:0;top:11px;width:7px;height:7px;border-radius:50%;background:#6c6c84}
+.items .good:before{background:var(--up)}.items .bad:before{background:var(--dn)}
+.badge.good,.kv .good{color:var(--up)}.badge.bad,.kv .bad{color:var(--dn)}
+.run{background:var(--card2);border:1px solid var(--line);border-radius:14px;margin-bottom:8px}
+.run>summary{padding:11px 30px 11px 13px;font-weight:600;font-size:14px;display:block;position:relative}
+.run>summary:after{position:absolute;right:12px;top:9px}
+.run .rb{padding:0 13px 12px;font-size:13px}
+.run h4{margin:10px 0 4px;font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px}
+.run li{margin:3px 0}.run ul{margin:0;padding-left:18px}
+.hl{border:1px solid #ff2d95;background:linear-gradient(135deg,rgba(255,45,149,.14),rgba(166,61,255,.10));border-radius:14px;padding:10px 12px;margin:8px 0}
+.hl b{color:#ff8ac4}
+.expl{color:var(--mut);font-size:12.5px;font-weight:400;padding:0 16px 10px;margin-top:-6px}
+.cards2{display:grid;gap:8px}
+.ic2{background:var(--card2);border:1px solid var(--line);border-radius:14px;padding:11px 12px}
+.ic2.best{border-color:#ff2d95;box-shadow:0 0 0 1px rgba(255,45,149,.35)}
+.ic2 .top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.ic2 .sym{font-size:16px;font-weight:800}
+.ic2 .meta{color:var(--mut);font-size:12px}
+.badge{font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap}
+.badge.good{background:rgba(34,227,154,.14)}.badge.bad{background:rgba(255,77,109,.15)}.badge.neutral{background:#25253a;color:#c9c9da}
+.kv{display:grid;grid-template-columns:repeat(3,1fr);gap:6px 10px;margin:8px 0 4px;font-size:12.5px}
+.kv span{color:var(--mut);display:block;font-size:11px}
+.why{font-size:13px;color:#d6d6e4;margin-top:6px}
+.legend2{color:var(--mut);font-size:12px;background:#1a1a29;border-radius:12px;padding:8px 11px;margin-bottom:8px}
 </style>
 </head>
 <body>
 <div class="wrap">
-<header><div class="brand">ATLAS · paper bot</div><div><span id="status" class="pill"><span class="dot"></span>načítám…</span> <span id="mkt" class="pill"></span></div></header>
+<header><div class="brand">ATLAS · paper bot</div><div><span id="status" class="pill"><span class="dot"></span>loading…</span> <span id="mkt" class="pill"></span></div></header>
 
 <section class="card hero">
-  <div class="k">Equity</div>
+  <div class="k">Account value</div>
   <div class="big" id="eqv">–</div>
   <span class="pnl" id="pnl">–</span>
-  <div class="sub" id="eqsub">Začínal s $1 000</div>
+  <div class="sub" id="eqsub">Started with $1,000</div>
   <div id="eq"></div>
 </section>
 
 <div class="stats">
-  <div class="stat"><div class="k">Pozice</div><div class="v" id="s-pos">–</div><div class="s" id="s-pos-s"></div></div>
-  <div class="stat"><div class="k">Poslední sken</div><div class="v" id="s-scan">–</div><div class="s" id="s-scan-s"></div></div>
-  <div class="stat"><div class="k">Universum</div><div class="v" id="s-uni">–</div><div class="s" id="s-uni-s"></div></div>
+  <div class="stat"><div class="k">Open trades</div><div class="v" id="s-pos">–</div><div class="s" id="s-pos-s"></div></div>
+  <div class="stat"><div class="k">Last scan</div><div class="v" id="s-scan">–</div><div class="s" id="s-scan-s"></div></div>
+  <div class="stat"><div class="k">Watching</div><div class="v" id="s-uni">–</div><div class="s" id="s-uni-s"></div></div>
 </div>
 
-<section class="card"><h2><span id="tc-title">Živý obchod</span><span class="tag" id="tc-tag">LIVE</span></h2><div id="tcs"></div></section>
+<section class="card"><h2><span id="tc-title">Live trade</span><span class="tag" id="tc-tag">LIVE</span></h2><div id="tcs"></div></section>
 
-<section class="card"><h2>Pipeline <span class="k" id="pl-sub">24 h</span></h2><div id="pipe"></div></section>
+<section class="card"><h2>How the bot decides <span class="k">last 24 h · tap a step</span></h2><div id="pipe"></div></section>
 
-<section class="card"><h2>Graf TradingView</h2>
+<section class="card"><h2>TradingView chart</h2>
   <div class="bar"><select id="sym"></select><select id="tf"><option value="5">5m</option><option value="15" selected>15m</option><option value="60">1h</option><option value="240">4h</option><option value="D">1D</option></select></div>
   <div id="tv"></div>
 </section>
 
-<section class="card"><h2>Log <span class="k" id="log-sub"></span></h2><div class="log" id="log"></div></section>
+<section class="card"><h2>Last bot runs <span class="k">tap a run for details</span></h2><div id="runs"></div></section>
 
-<details><summary>Otevřené pozice <span class="n" id="n-pos"></span></summary><div class="body" id="t-pos"></div></details>
-<details><summary>Poslední obchody <span class="n" id="n-tr"></span></summary><div class="body" id="t-tr"></div></details>
-<details><summary>Signály a těsně vedle <span class="n" id="n-near"></span></summary><div class="body" id="t-near"></div></details>
-<details><summary>Výsledek skenu po symbolech <span class="n" id="n-res"></span></summary><div class="body" id="t-res"></div></details>
-<details><summary>Chyby <span class="n" id="n-err"></span></summary><div class="body" id="t-err"></div></details>
+<section class="card"><h2>Activity log <span class="k" id="log-sub"></span></h2><div class="log" id="log"></div></section>
 
-<div class="foot">Jen simulace (paper, virtuálních $1&nbsp;000) · akcie USA + krypto · <span id="gen"></span><br>
-Grafy: <a href="https://www.tradingview.com/" rel="noopener noreferrer" target="_blank">TradingView</a> (widget + Lightweight Charts™) · živé krypto ceny Bybit</div>
+<details><summary>Open trades <span class="n" id="n-pos"></span></summary><div class="expl">Simulated trades the bot holds right now, with the price where it will cut the loss (stop-loss) and take the profit (take-profit).</div><div class="body" id="t-pos"></div></details>
+<details><summary>Closed trades <span class="n" id="n-tr"></span></summary><div class="expl">Finished trades: where the bot bought, where it sold and how much it made or lost.</div><div class="body" id="t-tr"></div></details>
+<details><summary>Best ideas &amp; near misses <span class="n" id="n-near"></span></summary><div class="expl">Setups that almost became trades in the last 24 h, best first, and why they were turned down.</div><div class="body" id="t-near"></div></details>
+<details><summary>Every symbol's latest check <span class="n" id="n-res"></span></summary><div class="expl">The most recent result for each stock and coin the bot watches, in plain words.</div><div class="body" id="t-res"></div></details>
+<details><summary>Errors <span class="n" id="n-err"></span></summary><div class="expl">Technical problems the bot ran into (it keeps running; one bad data source never stops it alone).</div><div class="body" id="t-err"></div></details>
+
+<div class="foot">Simulation only (paper trading, $1,000 of virtual money) · US stocks + crypto · <span id="gen"></span><br>
+Charts: <a href="https://www.tradingview.com/" rel="noopener noreferrer" target="_blank">TradingView</a> (widget + Lightweight Charts™) · live crypto prices from Bybit</div>
 </div>
 
 <script src="https://s3.tradingview.com/tv.js"></script>
@@ -110,26 +142,27 @@ Grafy: <a href="https://www.tradingview.com/" rel="noopener noreferrer" target="
 <script>
 const $=id=>document.getElementById(id), LC=window.LightweightCharts;
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const usd=(v,d=2)=>v==null?"–":(v<0?"-":"")+"$"+Math.abs(v).toLocaleString("cs-CZ",{minimumFractionDigits:d,maximumFractionDigits:d});
+const usd=(v,d=2)=>v==null?"–":(v<0?"-":"")+"$"+Math.abs(v).toLocaleString("en-US",{minimumFractionDigits:d,maximumFractionDigits:d});
 const sg=v=>v==null?"":(v>0?"+":"");const cls=v=>v==null?"":(v>=0?"up":"dn");
-const num=(v,d=2)=>v==null?"–":Number(v).toLocaleString("cs-CZ",{maximumFractionDigits:d});
-const tm=t=>t?new Date(t).toLocaleString("cs-CZ",{timeZone:"Europe/Prague",day:"numeric",month:"numeric",hour:"2-digit",minute:"2-digit"}):"–";
-const hm=t=>t?new Date(t).toLocaleTimeString("cs-CZ",{timeZone:"Europe/Prague",hour:"2-digit",minute:"2-digit"}):"–";
-const ago=t=>{if(!t)return"";const m=Math.round((Date.now()-new Date(t))/60000);return m<1?"právě teď":m<60?`před ${m} min`:`před ${Math.round(m/60)} h`};
+const px=v=>v==null?"–":Number(v).toLocaleString("en-US",{maximumSignificantDigits:6});
+const num=(v,d=2)=>v==null?"–":Number(v).toLocaleString("en-US",{maximumFractionDigits:d});
+const TZ={timeZone:"Europe/Prague"};
+const tm=t=>t?new Date(t).toLocaleString("en-GB",{...TZ,day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}):"–";
+const hm=t=>t?new Date(t).toLocaleTimeString("en-GB",{...TZ,hour:"2-digit",minute:"2-digit"}):"–";
+const ago=t=>{if(!t)return"";const m=Math.round((Date.now()-new Date(t))/60000);return m<1?"just now":m<60?`${m} min ago`:`${Math.round(m/60)} h ago`};
 const ICONS={scan:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',filter:'<path d="M3 5h18l-7 8v6l-4 2v-8z"/>',
  brain:'<path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 6 1V5a3 3 0 0 0-3-1z"/><path d="M15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-6 1"/>',
  entry:'<path d="M4 17l6-6 4 4 7-8"/><path d="M15 7h6v6"/>',guard:'<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="m9 12 2 2 4-4"/>'};
-const KIND={scan:"Sken",filter:"Filtr",entry:"Vstup",guard:"Strážce",loss:"Strážce"};
-function table(cols,rows,empty){if(!rows||!rows.length)return`<div class="empty">${empty}</div>`;
- return`<table><thead><tr>${cols.map(c=>`<th>${c[0]}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td class="${c[2]?c[2](r):""}">${c[1](r)}</td>`).join("")}</tr>`).join("")}</tbody></table>`}
+const open_={};function keepOpen(root){root.querySelectorAll("details[data-k]").forEach(d=>{if(open_[d.dataset.k])d.open=true;d.ontoggle=()=>{open_[d.dataset.k]=d.open}})}
+const kv=pairs=>`<div class="kv">${pairs.map(([k,v,c])=>`<div><span>${k}</span><b class="${c||""}">${v}</b></div>`).join("")}</div>`;
+const empty=t=>`<div class="empty">${t}</div>`;
 const chartOpts=()=>({autoSize:true,layout:{background:{color:"transparent"},textColor:"#9393a8",attributionLogo:false},
  grid:{vertLines:{visible:false},horzLines:{color:"#1f1f30"}},rightPriceScale:{borderVisible:false},timeScale:{borderVisible:false,timeVisible:true},
  crosshair:{mode:0},handleScroll:true,handleScale:{pinch:true}});
 
 let tvSym=null,tvTf="15",eqChart=null,eqSeries=null,tcKey=null,tcState=[];
 function drawTV(){if(!window.TradingView||!tvSym)return;$("tv").innerHTML="";
- new TradingView.widget({container_id:"tv",symbol:tvSym,interval:tvTf,autosize:true,theme:"dark",style:"1",locale:"cs",timezone:"Europe/Prague",hide_side_toolbar:true,allow_symbol_change:true,studies:["Volume@tv-basicstudies"]});}
-
+ new TradingView.widget({container_id:"tv",symbol:tvSym,interval:tvTf,autosize:true,theme:"dark",style:"1",locale:"en",timezone:"Europe/Prague",hide_side_toolbar:true,allow_symbol_change:true,studies:["Volume@tv-basicstudies"]});}
 const bybitSym=s=>s.split("-")[0]+"USDT";
 async function bybit(sym){const r=await fetch(`https://api.bybit.com/v5/market/kline?category=linear&symbol=${bybitSym(sym)}&interval=5&limit=150`,{cache:"no-store"});
  const j=await r.json();return (j.result?.list||[]).map(k=>({time:Math.floor(+k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4]})).reverse();}
@@ -139,54 +172,71 @@ function livePnl(t,last){if(t.open&&t.qty!=null&&last!=null)return (last-t.entry
 function buildTradeCharts(list){
  const key=JSON.stringify(list.map(t=>[t.symbol,t.opened_ts,t.open]));if(key===tcKey){list.forEach((t,i)=>Object.assign(tcState[i].t,t));return;}
  tcKey=key;tcState.forEach(s=>s.chart.remove());tcState=[];
- const live=list.some(t=>t.open);$("tc-title").textContent=live?"Živý obchod":"Poslední uzavřený obchod";$("tc-tag").textContent=live?"LIVE":"HISTORIE";
- if(!list.length){$("tcs").innerHTML='<div class="empty">Zatím žádný obchod. Vyber symbol v grafu TradingView níže.</div>';return;}
- $("tcs").innerHTML=list.map((t,i)=>`<div class="tc"><div class="tch"><div><b>${esc(t.symbol)}</b> <span class="mut">· ${t.open?"long":"uzavřeno"} · ${esc(t.strategy||"")}${t.leverage?` · ${t.leverage}x`:""}</span></div>
-  <div><span class="k">${t.open?"Živé P&amp;L":"P&amp;L"}</span> <span class="lp" id="lp${i}">–</span></div></div>
-  <div class="legend"><span><i style="background:#ff6ec7"></i>Vstup ${num(t.entry,6)}</span>${t.sl!=null?`<span><i style="background:#ff4d6d"></i>SL ${num(t.sl,6)}</span>`:""}${t.tp!=null?`<span><i style="background:#22e39a"></i>TP ${num(t.tp,6)}</span>`:""}${t.exit!=null?`<span><i style="background:#8ab4ff"></i>Výstup ${num(t.exit,6)} (${esc(t.exit_reason||"")})</span>`:""}<span id="lu${i}"></span></div>
+ const live=list.some(t=>t.open);$("tc-title").textContent=live?"Live trade":"Last closed trade";$("tc-tag").textContent=live?"LIVE":"HISTORY";
+ if(!list.length){$("tcs").innerHTML=empty("No trades yet. Pick any symbol in the TradingView chart below.");return;}
+ $("tcs").innerHTML=list.map((t,i)=>`<div class="tc"><div class="tch"><div><b>${esc(t.symbol)}</b> <span class="mut">· ${t.open?"long (betting on a rise)":"closed"} · ${esc(t.strategy||"")}${t.leverage?` · ${t.leverage}x leverage`:""}</span></div>
+  <div><span class="k">${t.open?"Live profit/loss":"Profit/loss"}</span> <span class="lp" id="lp${i}">–</span></div></div>
+  <div class="legend"><span><i style="background:#ff6ec7"></i>Bought at ${px(t.entry)}</span>${t.sl!=null?`<span><i style="background:#ff4d6d"></i>Stop-loss ${px(t.sl)}</span>`:""}${t.tp!=null?`<span><i style="background:#22e39a"></i>Take-profit ${px(t.tp)}</span>`:""}${t.exit!=null?`<span><i style="background:#8ab4ff"></i>Sold at ${px(t.exit)} (${esc(t.exit_reason||"")})</span>`:""}<span id="lu${i}"></span></div>
   <div class="tchart" id="tchart${i}"></div></div>`).join("");
  list.forEach((t,i)=>{const ch=LC.createChart($("tchart"+i),chartOpts());
   const s=ch.addSeries(LC.CandlestickSeries,{upColor:"#22e39a",downColor:"#ff4d6d",borderVisible:false,wickUpColor:"#22e39a",wickDownColor:"#ff4d6d"});
   const pl=(p,c,title)=>p!=null&&s.createPriceLine({price:+p,color:c,lineWidth:2,lineStyle:2,axisLabelVisible:true,title});
-  pl(t.entry,"#ff6ec7","Vstup");pl(t.sl,"#ff4d6d","SL");pl(t.tp,"#22e39a","TP");if(t.exit!=null)pl(t.exit,"#8ab4ff","Výstup");
+  pl(t.entry,"#ff6ec7","Buy");pl(t.sl,"#ff4d6d","SL");pl(t.tp,"#22e39a","TP");if(t.exit!=null)pl(t.exit,"#8ab4ff","Sell");
   tcState.push({t,chart:ch,series:s,i});});
  refreshTrades(true);}
 async function refreshTrades(fit){for(const st of tcState){const t=st.t;let c=[],src="snapshot";
-  if(t.asset_class==="crypto"){try{c=await bybit(t.symbol);src="Bybit živě"}catch(e){c=snapCandles(t.candles)}}else c=snapCandles(t.candles);
+  if(t.asset_class==="crypto"){try{c=await bybit(t.symbol);src="live from Bybit"}catch(e){c=snapCandles(t.candles)}}else c=snapCandles(t.candles);
   if(c.length){st.series.setData(c);if(fit)st.chart.timeScale().fitContent();}
   const last=c.length?c[c.length-1].close:t.mark;const p=livePnl(t,last);const el=$("lp"+st.i);
   el.textContent=sg(p)+usd(p);el.className="lp "+cls(p);
-  $("lu"+st.i).textContent=t.asset_class==="crypto"?`· ${src} · ${hm(new Date())}`:"· akcie: snapshot z posledního běhu";}}
+  $("lu"+st.i).textContent=t.asset_class==="crypto"?`· ${src} · ${hm(new Date())}`:"· stock prices: snapshot from the last bot run";}}
 
+function symCard(r,best){return`<div class="ic2${best?" best":""}"><div class="top"><div><div class="sym">${esc(r.symbol)}</div><div class="meta">${esc(r.market)} · checked ${tm(r.ts)}${r.strategy?" · "+esc(r.strategy):""}</div></div>
+ <span class="badge ${r.tone}">${best?"★ Closest call":esc(r.result)}</span></div>
+ ${kv([["Price",px(r.price)],["RSI",r.rsi==null?"–":num(r.rsi,0),r.rsi>70?"bad":r.rsi<30?"good":""],["Trend",esc(r.trend),r.trend==="Rising"?"up":r.trend==="Falling"?"dn":""]])}
+ <div class="why">${esc(r.why)}</div></div>`}
 function render(d){
  const s=d.summary,u=d.universe;
- const st=$("status");st.innerHTML='<span class="dot"></span>'+esc(s.halted?"Zastaveno":s.status==="běží"?"Běží":"Neběží");
- st.title=s.status;st.className="pill "+(s.halted?"bad":s.status==="běží"?"ok":"warn");
- const m=$("mkt");m.textContent=s.us_market_open?"US trh otevřený":"US trh zavřený";m.className="pill "+(s.us_market_open?"ok":"");
+ const st=$("status");st.innerHTML='<span class="dot"></span>'+({running:"Running",paused:"Paused for safety","not running":"Not running"}[s.status]||s.status);
+ st.title=s.status_detail||"";st.className="pill "+(s.halted?"bad":s.status==="running"?"ok":"warn");
+ const m=$("mkt");m.textContent=s.us_market_open?"US market open":"US market closed";m.className="pill "+(s.us_market_open?"ok":"");
  $("eqv").textContent=usd(s.equity);
- const pct=s.start_equity?s.total_pnl/s.start_equity*100:0;const p=$("pnl");p.textContent=`${sg(s.total_pnl)}${usd(s.total_pnl)} (${sg(pct)}${pct.toFixed(1)} %)`;p.className="pnl "+cls(s.total_pnl);
- $("eqsub").innerHTML=`Začínal s ${usd(s.start_equity,0)} · dnes <span class="${cls(s.daily_pnl)}">${sg(s.daily_pnl)}${usd(s.daily_pnl)}</span>`;
- $("s-pos").textContent=`${s.open_positions}/${s.max_open_positions}`;$("s-pos-s").textContent="otevřené";
- $("s-scan").textContent=hm(s.last_scan);$("s-scan-s").textContent=ago(s.last_scan);
- $("s-uni").textContent=u.stocks+u.crypto;$("s-uni-s").textContent=`${u.stocks} akcií · ${u.crypto} krypto`;
- $("pipe").innerHTML=d.pipeline.map(x=>`<div class="step"><div class="ic"><svg viewBox="0 0 24 24">${ICONS[x.icon]||""}</svg></div>
-  <div class="t"><div class="l">${esc(x.label)}</div><div class="x" title="${esc(x.latest)}">${esc(x.latest)}</div></div><div class="cnt">${x.count}</div></div>`).join("");
- $("log-sub").textContent=d.events.length+" událostí";
- $("log").innerHTML=d.events.length?d.events.map(e=>`<div class="c-${e.kind}"><span class="ts">${hm(e.ts)}</span>${esc(e.text)}</div>`).join(""):'<div class="empty">Zatím nic.</div>';
+ const pct=s.start_equity?s.total_pnl/s.start_equity*100:0;const p=$("pnl");p.textContent=`${sg(s.total_pnl)}${usd(s.total_pnl)} (${sg(pct)}${pct.toFixed(1)}%)`;p.className="pnl "+cls(s.total_pnl);
+ $("eqsub").innerHTML=`Started with ${usd(s.start_equity,0)} · today <span class="${cls(s.daily_pnl)}">${sg(s.daily_pnl)}${usd(s.daily_pnl)}</span>`;
+ $("s-pos").textContent=`${s.open_positions} / ${s.max_open_positions}`;$("s-pos-s").textContent="max at once";
+ $("s-scan").textContent=hm(s.last_scan);$("s-scan-s").textContent=ago(s.last_scan)+" (Prague)";
+ $("s-uni").textContent=u.stocks+u.crypto;$("s-uni-s").textContent=`${u.stocks} stocks · ${u.crypto} crypto`;
+ $("pipe").innerHTML=d.pipeline.map(x=>`<details class="step" data-k="p-${x.key}"><summary><div class="ic"><svg viewBox="0 0 24 24">${ICONS[x.icon]||""}</svg></div>
+  <div class="t"><div class="l">${esc(x.label)}</div><div class="x">${esc(x.latest)}</div></div><div class="cnt">${x.count}</div></summary>
+  <div class="sbody"><div class="desc">${esc(x.desc)}</div><div class="items">${x.items.length?x.items.map(i=>`<div class="${i.tone}"><span class="ts">${hm(i.ts)}</span>${esc(i.text)}</div>`).join(""):empty("Nothing yet.")}</div></div></details>`).join("");
+ keepOpen($("pipe"));
+ $("runs").innerHTML=d.cycles.length?d.cycles.map((c,i)=>`<details class="run" data-k="r-${c.ts}"><summary>${hm(c.ts)} · Checked ${c.pairs} symbols · ${c.signals} idea${c.signals===1?"":"s"} · <span class="${c.entries?"up":""}">${c.entries} trade${c.entries===1?"":"s"}</span></summary><div class="rb">
+  <div class="mut">Checked ${esc(c.what)}.</div>
+  ${c.entered.length?`<h4>Trades opened</h4><ul>${c.entered.map(e=>`<li class="up">Bought ${esc(e.symbol)} (${esc(e.strategy)}) at ${px(e.entry)}, stop-loss ${px(e.sl)}, take-profit ${px(e.tp)}</li>`).join("")}</ul>`:""}
+  ${c.passed.length?`<h4>Passed all checks</h4><ul>${c.passed.map(x=>`<li class="up">${esc(x.symbol)} (${esc(x.strategy)})</li>`).join("")}</ul>`:""}
+  ${c.rejected.length?`<h4>Turned down</h4><ul>${c.rejected.map(x=>`<li><b>${esc(x.symbol)}</b> (${esc(x.strategy)}): <span class="mut">${esc(x.why)}</span></li>`).join("")}</ul>`:""}
+  ${c.best?`<div class="hl"><b>★ Closest call: ${esc(c.best.symbol)}</b><br>${esc(c.best.why)}</div>`:""}
+  ${c.common.length?`<h4>Why most symbols had no setup</h4><ul>${c.common.map(x=>`<li>${esc(x.why)} <span class="mut">(${x.n} symbols)</span></li>`).join("")}</ul>`:""}
+  ${!c.signals?`<div class="mut" style="margin-top:6px">No trade ideas this run: nothing met the entry rules.</div>`:""}
+ </div></details>`).join(""):empty("No runs in the last 24 h.");
+ keepOpen($("runs"));
+ $("log-sub").textContent=d.events.length+" events";
+ $("log").innerHTML=d.events.length?d.events.map(e=>`<div class="c-${e.kind}"><span class="ts">${hm(e.ts)}</span>${esc(e.text)}</div>`).join(""):empty("Nothing yet.");
  buildTradeCharts(d.trade_charts||[]);
  $("n-pos").textContent=d.positions.length;
- $("t-pos").innerHTML=table([["Symbol",r=>`<b>${esc(r.symbol)}</b>`],["Strategie",r=>esc(r.strategy)],["Vstup",r=>num(r.entry_price,4)],["Teď",r=>num(r.current_price,4)],
-  ["P&L",r=>usd(r.unrealized_pnl_usd),r=>cls(r.unrealized_pnl_usd)],["SL",r=>num(r.stop_loss,4)],["TP",r=>num(r.take_profit,4)],["Páka",r=>r.leverage+"x"],["Otevřeno",r=>tm(r.opened_ts)]],d.positions,"Žádná otevřená pozice.");
+ $("t-pos").innerHTML=d.positions.length?`<div class="cards2">${d.positions.map(r=>`<div class="ic2"><div class="top"><div><div class="sym">${esc(r.symbol)}</div><div class="meta">${esc(r.market)} · ${esc(r.side)} · ${esc(r.strategy)} · ${r.leverage}x · opened ${tm(r.opened_ts)}</div></div><span class="badge ${r.pnl>=0?"good":"bad"}">${sg(r.pnl)}${usd(r.pnl)}</span></div>
+  ${kv([["Bought at",px(r.entry)],["Now",px(r.now)],["Stop-loss",px(r.sl),"dn"],["Take-profit",px(r.tp),"up"],["Direction","Long (up)"],["Profit/loss",sg(r.pnl)+usd(r.pnl),cls(r.pnl)]])}</div>`).join("")}</div>`:empty("No open trades right now.");
  $("n-tr").textContent=d.trades.length;
- $("t-tr").innerHTML=table([["Zavřeno",r=>tm(r.closed_ts)],["Symbol",r=>`<b>${esc(r.symbol)}</b>`],["Strategie",r=>esc(r.strategy)],["Vstup",r=>num(r.entry_price,4)],["Výstup",r=>num(r.exit_price,4)],
-  ["P&L",r=>usd(r.realized_pnl_usd),r=>cls(r.realized_pnl_usd)],["R",r=>num(r.r_multiple)],["Důvod",r=>esc(r.exit_reason)]],d.trades,"Zatím žádný uzavřený obchod.");
+ $("t-tr").innerHTML=d.trades.length?`<div class="cards2">${d.trades.map(r=>`<div class="ic2"><div class="top"><div><div class="sym">${esc(r.symbol)}</div><div class="meta">${esc(r.market)} · ${esc(r.strategy)} · closed ${tm(r.closed_ts)}</div></div><span class="badge ${r.tone}">${esc(r.result)}</span></div>
+  ${kv([["Bought at",px(r.entry)],["Sold at",px(r.exit)],["Result",sg(r.pnl)+usd(r.pnl),cls(r.pnl)],["Stop-loss",px(r.sl),"dn"],["Take-profit",px(r.tp),"up"],["Direction","Long (up)"]])}</div>`).join("")}</div>`:empty("No closed trades yet.");
  $("n-near").textContent=d.near_misses.length;
- $("t-near").innerHTML=table([["Čas",r=>tm(r.ts)],["Symbol",r=>`<b>${esc(r.symbol)}</b>`],["Výsledek",r=>esc(r.result),r=>r.result==="signál"?"up":"mut"],["Strategie",r=>esc(r.strategy)],["Skóre",r=>num(r.score,0)],["RR",r=>num(r.rr)],["Proč",r=>esc(r.reason),()=>"r"]],d.near_misses,"Za 24 h žádný kandidát.");
+ $("t-near").innerHTML=d.near_misses.length?`<div class="cards2">${d.near_misses.map(r=>symCard(r,d.best_near&&r.symbol===d.best_near.symbol)).join("")}</div>`:empty("No setups came close in the last 24 h.");
  $("n-res").textContent=d.scan_results.length;
- $("t-res").innerHTML=table([["Čas",r=>tm(r.ts)],["Symbol",r=>`<b>${esc(r.symbol)}</b>`],["Výsledek",r=>esc(r.result)],["Cena",r=>num(r.price,4)],["RSI",r=>num(r.rsi,0)],["Trend",r=>esc(r.trend)],["Důvod",r=>esc(r.reason),()=>"r"]],d.scan_results,"Žádný sken za 24 h.");
+ $("t-res").innerHTML=`<div class="legend2"><b>RSI</b> (0–100) shows how hard the price has been pushed: above 70 = overheated, below 30 = oversold, around 50 = calm. <b>Trend</b> = the direction of the price over recent hours (Rising, Falling or Sideways).</div>`+
+  (d.scan_results.length?`<div class="cards2">${d.scan_results.map(r=>symCard(r,d.best_near&&r.symbol===d.best_near.symbol&&r.result==="Rejected")).join("")}</div>`:empty("No checks in the last 24 h."));
  $("n-err").textContent=d.errors.length;
- $("t-err").innerHTML=table([["Čas",r=>tm(r.ts)],["Modul",r=>esc(r.module)],["Chyba",r=>esc(r.error_type+": "+r.message),()=>"r"]],d.errors,"Bez chyb.");
- $("gen").textContent="data "+tm(d.generated_ts)+" (Praha)";
+ $("t-err").innerHTML=d.errors.length?`<div class="cards2">${d.errors.map(r=>`<div class="ic2"><div class="meta">${tm(r.ts)} · ${esc(r.where)}</div><div class="why">${esc(r.text)}</div></div>`).join("")}</div>`:empty("No errors. All good.");
+ $("gen").textContent="updated "+tm(d.generated_ts)+" (Prague time)";
  const sel=$("sym");if(!sel.options.length){const g={};d.tv_symbols.forEach(x=>{(g[x.group]=g[x.group]||[]).push(x)});
   sel.innerHTML=Object.entries(g).map(([k,v])=>`<optgroup label="${esc(k)}">${v.map(x=>`<option value="${esc(x.tv)}">${esc(x.label)}</option>`).join("")}</optgroup>`).join("");
   tvSym=sel.value;drawTV();}
@@ -195,7 +245,7 @@ function render(d){
   const seen=new Set();eqSeries.setData(d.equity_curve.map(([t,v])=>({time:Math.floor(new Date(t)/1000),value:v})).filter(x=>!seen.has(x.time)&&seen.add(x.time)).sort((a,b)=>a.time-b.time));eqChart.timeScale().fitContent();}
 }
 $("sym").onchange=e=>{tvSym=e.target.value;drawTV()};$("tf").onchange=e=>{tvTf=e.target.value;drawTV()};
-async function load(){try{const r=await fetch("data.json?"+Date.now(),{cache:"no-store"});render(await r.json())}catch(e){const s=$("status");s.textContent="data nedostupná";s.className="pill bad";console.error(e)}}
+async function load(){try{const r=await fetch("data.json?"+Date.now(),{cache:"no-store"});render(await r.json())}catch(e){const s=$("status");s.textContent="data unavailable";s.className="pill bad";console.error(e)}}
 load();setInterval(load,60000);setInterval(()=>refreshTrades(false),5000);
 </script>
 </body>

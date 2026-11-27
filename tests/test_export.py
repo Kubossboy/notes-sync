@@ -30,7 +30,7 @@ def test_export_static_snapshot(settings, dash_db, tmp_path):
     out = tmp_path / "site"
     site = export(settings, out, cfg["slug"], settings.db_path, live_prices=False)
     page = (site / "index.html").read_text()
-    assert 'name="robots" content="noindex' in page and "data.json" in page and 'lang="cs"' in page
+    assert 'name="robots" content="noindex' in page and "data.json" in page and 'lang="en"' in page
     assert "<form" not in page and "POST" not in page
     assert "X-Robots-Tag: noindex" in (out / "_headers").read_text()
     assert "Disallow: /" in (out / "robots.txt").read_text()
@@ -38,7 +38,7 @@ def test_export_static_snapshot(settings, dash_db, tmp_path):
     st = json.loads((site / "state.json").read_text())
     assert set(st) >= {"generated_ts", "overview", "positions"}
     view = json.loads((site / "data.json").read_text())
-    assert set(view) >= {"summary", "positions", "trades", "signals", "near_misses", "scan_log", "universe", "tv_symbols"}
+    assert set(view) >= {"summary", "positions", "trades", "pipeline", "cycles", "near_misses", "scan_results", "universe", "tv_symbols"}
     assert view["universe"]["stocks"] == len(settings.markets.stocks.watchlist)
     blob = "".join(p.read_text() for p in out.rglob("*") if p.is_file())
     for bad in (str(tmp_path), "/workspace", "/home/", "sqlite3", ".secrets"):
