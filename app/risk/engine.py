@@ -214,8 +214,14 @@ class RiskEngine:
             close = regular_close_at(now)
             if close is not None and sess == "regular":
                 mins = (close - now).total_seconds() / 60
-                add("stock_entry_window", mins > self.r.stock_no_new_entries_minutes_before_close, round(mins, 1),
-                    self.r.stock_no_new_entries_minutes_before_close, "minutes to close")
+                sw = self.s.swing
+                if p.strategy == sw.strategy and sw.enabled:      # D103: overnight swing enters NEAR the close only
+                    add("swing_entry_window", sw.last_minutes_before_close < mins <= sw.entry_minutes_before_close,
+                        round(mins, 1), sw.entry_minutes_before_close, "minutes to close (15:45-15:59 New York)")
+                    add("swing_unlevered", p.leverage == 1.0, p.leverage, 1.0, "overnight positions are never leveraged")
+                else:
+                    add("stock_entry_window", mins > self.r.stock_no_new_entries_minutes_before_close, round(mins, 1),
+                        self.r.stock_no_new_entries_minutes_before_close, "minutes to close")
 
         # portfolio rules
         add("max_open_positions", len(st.open_positions) < self.r.max_open_positions,

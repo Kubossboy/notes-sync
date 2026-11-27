@@ -170,7 +170,9 @@ class PaperSimulator:
         last = quote.price if quote else (bars[-1].close if bars else None)
         # time exits
         reason = None
-        if ac == AssetClass.STOCK:
+        if ac == AssetClass.STOCK and pos.get("strategy") == self.s.swing.strategy:
+            pass        # D103: the RSI(2) swing is the ONLY stock strategy allowed to hold overnight (exits in trader)
+        elif ac == AssetClass.STOCK:
             close = regular_close_at(now)
             opened_close = regular_close_at(opened)
             if close is None or (opened_close and now >= opened_close - timedelta(

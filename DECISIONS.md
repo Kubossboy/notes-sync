@@ -422,3 +422,24 @@ Rule: a strategy is enabled in a regime only if that cell is positive both IS an
   behave exactly as before (entry proceeds). FinBERT stays.
 - **Local timings (8-core box):** load 2 s, summary 5–13 s, check 1.7–2.0 s. Actions timings: see run logs ("LLM loaded in",
   "LLM budget").
+
+## D103 — Connors RSI(2) overnight swing for stocks (owner-approved overnight exception, paper only) (2026-11-27)
+- **Approval:** Kubiqq approved overnight holds for THIS strategy only. `risk.stock_overnight_holding` stays
+  `Literal[False]`; every intraday stock strategy stays watch-only and is still flattened before the close.
+- **Rules (as backtested in D100, `app/strategies/swing.py`):** once per trading day at 15:45–15:59 New York
+  (21:45–21:59 Prague; early-close days use their own close), daily bars incl. today's bar so far: close > SMA200 and
+  RSI(2) < 5 → buy near the close. Stop = entry − 2 × ATR(10). Exits: close back above SMA5 (checked 15:45–15:59, never on
+  the entry day), 10 trading days, or a 2.2 R profit cap (needed for the R:R gate; backtest impact nil: OOS +0.151 R
+  without vs +0.151 R with a 2 R cap).
+- **Regime:** only SPY bull/high and sideways/high (`regime.matrix.stock.rsi2_swing`); fails CLOSED when the regime is
+  unknown. Gated combined backtest: IS 85 trades, 66 %, +0.07 R; OOS 82 trades, 78 %, +0.15 R, max DD 3 R.
+- **Risk:** unlevered (`swing.leverage: Literal[1.0]`), normal non-leveraged limits (0.25 % risk/trade, 1 % daily loss,
+  max open positions, cooldown, quote checks), max 2 overnight positions, own entry window check
+  (`swing_entry_window`), validation `forward_test` (judged after 30 trades). The Qwen veto (D102) applies.
+- **Gap risk:** while the market is closed the position is not managed; next session only regular-session bars are
+  used, so a gap through the stop fills at the 09:30 open (minus slippage), not at the stop. Max loss is the
+  unlevered notional (≤ 50 % of equity), not just 1 R.
+- **Dashboard:** strategy "Overnight dip-buy (RSI-2)", the position card shows "Held overnight" plus the plain-English
+  entry reason; exits "Bounced back above its 5-day average" / "Held the maximum 10 trading days".
+- **Note:** the Alpaca paper mirror sends stock orders as `day` orders; the internal ledger stays the source of truth
+  and closes the mirror when it exits.

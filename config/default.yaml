@@ -160,7 +160,7 @@ validation:
   stress_cost_multiplier: 1.5     # PF must stay > 1 with 50 % higher fees/slippage/spread
   max_age_days: 30                # stale validation -> quant unavailable (incomplete)
   auto_deploy_params: false       # walk-forward-selected parameters are reported, never deployed
-  forward_test_strategies: [news_momentum]   # not backtestable -> forward PAPER test on the internal $1,000 ledger (Alpaca PAPER mirror, D85)
+  forward_test_strategies: [news_momentum, rsi2_swing]   # not backtestable -> forward PAPER test on the internal $1,000 ledger (Alpaca PAPER mirror, D85)
   forward_test_quant_score: 50    # neutral quant score while forward-testing (no evidence either way)
   forward_test_target_trades: 30  # judge the forward test after >= 30 closed trades
 
@@ -191,6 +191,7 @@ regime:
       trend_continuation: []
       sr_breakout: []
       news_momentum: []
+      rsi2_swing: [bull/high, sideways/high]     # D103 (OOS +0.16 R / +0.11 R); every other cell off
 
 # D102: local Qwen2.5-3B-Instruct on llama-server (CPU, started by the workflow). News summary + final VETO check.
 # Never adds trades. Any failure / timeout / bad output -> entries proceed as before (logged).
@@ -200,3 +201,13 @@ llm:
   budget_s: 60
   call_timeout_s: 25
   max_candidates: 3
+
+# D103: Connors RSI(2) swing - the ONLY stock strategy allowed to hold overnight (owner-approved, paper only).
+# Signals from daily bars at 15:45-15:59 New York, entry near the close, unlevered. Exits: stop 2 x ATR(10)
+# (a gap through it fills at the open), close back above the 5-day average, or 10 trading days.
+swing:
+  enabled: true
+  rsi_max: 5
+  atr_mult: 2.0
+  max_hold_days: 10
+  max_positions: 2

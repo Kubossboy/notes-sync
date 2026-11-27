@@ -325,6 +325,25 @@ class RegimeSection(_Strict):
     stock_watch_only: bool = False    # stocks: scan + log signals, never open paper entries
 
 
+class SwingSection(_Strict):
+    """D103 Connors RSI(2) overnight swing for stocks (owner-approved exception to the flat-by-close rule,
+    for THIS strategy only). Unlevered; normal (non-leveraged) risk limits; regime-gated; AI veto applies."""
+    enabled: bool = False
+    strategy: Literal["rsi2_swing"] = "rsi2_swing"
+    leverage: Literal[1.0] = 1.0                   # overnight positions are never leveraged
+    rsi_max: float = Field(5.0, gt=0, le=30)       # RSI(2) below this ...
+    sma_long: int = Field(200, ge=50)              # ... while the close is above its 200-day average
+    sma_exit: int = Field(5, ge=2)                 # exit: close back above its 5-day average
+    atr_period: int = Field(10, ge=2)
+    atr_mult: float = Field(2.0, gt=0)             # stop = entry - 2 x average daily range
+    target_r: float = Field(2.2, ge=2.0)           # profit cap only (backtest: almost never reached)
+    max_hold_days: int = Field(10, ge=1, le=20)
+    entry_minutes_before_close: float = Field(15, gt=1, le=60)   # window opens 15:45 New York
+    last_minutes_before_close: float = Field(1, ge=0.5)          # ... and closes 15:59
+    max_positions: int = Field(2, ge=1, le=2)
+    score: float = Field(70, ge=0, le=100)         # rule-based setup: fixed score
+
+
 class LLMSection(_Strict):
     """D102 local Qwen2.5-3B-Instruct (llama-server on CPU). Only summarises news and may VETO an entry."""
     enabled: bool = False
@@ -355,6 +374,7 @@ class Settings(_Strict):
     http: HttpSection = HttpSection()
     regime: RegimeSection = RegimeSection()
     llm: LLMSection = LLMSection()
+    swing: SwingSection = SwingSection()
 
     def config_hash(self) -> str:
         blob = json.dumps(self.model_dump(mode="json"), sort_keys=True).encode()

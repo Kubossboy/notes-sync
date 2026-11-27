@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from app.config import Settings
 from app.core.logging_setup import get_logger
 from app.core.safety import SafeState
+from app.data.calendar import ET
 from app.data.engine import MarketDataEngine, asset_class_of
 from app.data.models import AssetClass, tf_seconds
 from app.database.db import Database
@@ -62,14 +63,23 @@ class PaperTrader:
     # ------------------------------------------------------------------ cycle parts
     def manage(self, now: datetime) -> list[dict]:
         out = []
+        from app.data.calendar import regular_session_open
         for pos in self.ledger.open_positions():
             sym = pos["symbol"]
+            swing = self._is_swing(pos)
+            if swing and not regular_session_open(now):
+                # D103: held overnight; nothing can fill while the market is closed. The stop is re-checked
+                # from the next regular-session bars (a gap through it fills at the open).
+                out.append({"symbol": sym, "status": "open", "note": "held overnight (market closed)"})
+                continue
             try:
                 opened = datetime.fromisoformat(pos["opened_ts"])
                 mins = int((now - opened).total_seconds() / tf_seconds(self.s.execution.manage_timeframe)) + 5
                 fr = self.engine.get_candles(sym, self.s.execution.manage_timeframe, min(1000, max(10, mins)),
                                              crosscheck=False, now=now)
                 bars = fr.series.candles
+                if swing:                       # regular-session bars only: a stop order works 09:30-16:00
+                    bars = [b for b in bars if getattr(b, "session", None) in (None, "regular")]
                 if not bars:
                     raise RuntimeError("no bars")
                 try:
@@ -77,9 +87,15 @@ class PaperTrader:
                 except Exception:
                     q = None
                 r = self.sim.manage_position(pos, bars, now, q)
+                if swing and r.get("status") == "open":
+                    why = self._swing_exit(pos, q, now)
+                    if why:
+                        r = self.sim.close_position(pos, self.sim.costs.sell_fill(
+                            AssetClass.STOCK, q.price, q.bid, q.ask), why, now)
                 if "reason" in r and self.mirror is not None:      # internal exit -> mirror it
                     r["alpaca"] = self.mirror.close(pos["id"], sym, pos["asset_class"])
-                elif r.get("status") == "open" and self.s.execution.trade_management_enabled and r.get("mark"):
+                elif (r.get("status") == "open" and self.s.execution.trade_management_enabled and r.get("mark")
+                      and not swing):           # D103: the swing keeps its backtested exits only
                     try:
                         r["adjustments"] = self.tm.apply("main", pos, self.bars15(sym, now), r["mark"], now,
                                                          lambda p, why: self._close_main(p, why, q, now))
@@ -92,6 +108,90 @@ class PaperTrader:
                 self.safe.halt(f"cannot manage open position {sym}: {type(e).__name__}: {e}", module="execution")
                 out.append({"symbol": sym, "error": str(e)})
         return out
+
+    # ------------------------------------------------------------------ D103 RSI(2) overnight swing
+    def _is_swing(self, pos) -> bool:
+        return pos["asset_class"] == "stock" and pos["strategy"] == self.s.swing.strategy
+
+    def _daily(self, sym: str, now: datetime):
+        """Daily bars incl. today's forming bar, straight from the providers (a context read: never SAFE STATE)."""
+        from app.strategies.swing import daily_frame, ny_day
+        today = now.astimezone(ET).date()
+        for name in self.engine.sources_for(AssetClass.STOCK):
+            try:
+                df = daily_frame(self.engine.providers[name].fetch_candles(sym, "1d", 260, now=now))
+            except Exception:
+                continue
+            if len(df) and ny_day(df.index[-1]) == today:
+                return df
+        return None
+
+    def _swing_exit(self, pos, q, now: datetime) -> str | None:
+        from app.strategies.swing import exit_reason, in_window
+        if q is None or not in_window(now, self.s.swing):
+            return None
+        return exit_reason(self._daily(pos["symbol"], now), datetime.fromisoformat(pos["opened_ts"]), q.price,
+                           self.s.swing)
+
+    def swing_scan(self, now: datetime) -> list[int]:
+        """Once per trading day inside 15:45-15:59 New York: RSI(2) setups on the stock watchlist -> signals."""
+        cfg = self.s.swing
+        from app.strategies.swing import STRATEGY, expires, in_window, setup, why_not
+        if not (cfg.enabled and self.s.markets.stocks.enabled) or not in_window(now, cfg):
+            return []
+        day = now.astimezone(ET).date().isoformat()
+        st = self.db.get_state("swing_scan") or {}
+        if st.get("day") == day:
+            return [st["run_id"]] if st.get("run_id") else []
+        reg = None
+        try:
+            reg = self.scanner._current_regime(AssetClass.STOCK, now) if self.scanner else None
+        except Exception as e:
+            self.db.log_error("regime", e)
+        reg = reg or self.db.get_state("regime_stock")
+        from app.regime import allowed
+        cells = (self.s.regime.matrix.get("stock") or {}).get(STRATEGY) or []
+        if not reg or f"{reg['trend']}/{reg['vol']}" not in cells:      # overnight risk: fail closed on regime
+            why = (f"regime {reg['trend']}/{reg['vol']}: strategy off in this market" if reg
+                   else "regime unknown: overnight swing off")
+            self.db.set_state("swing_scan", {"day": day, "run_id": None, "skipped": why})
+            self.db.log_event("swing_skipped", "swing", f"RSI(2) swing: {why}")
+            return []
+        assert allowed(self.s.regime.matrix, "stock", STRATEGY, reg)
+        self.db.set_state("swing_scan", {"day": day, "run_id": None, "started": now.isoformat()})
+        wl = list(self.s.markets.stocks.watchlist)
+        run_id = self.db.insert("scan_runs", {"started_ts": now.isoformat(), "scanner": "stock", "mode": "live",
+                                              "timeframe": "1d", "symbols": ",".join(wl),
+                                              "config_hash": "d103-rsi2"})
+        found, rows = 0, []
+        for sym in wl:
+            df = self._daily(sym, now)
+            plan = setup(df, cfg) if df is not None else None
+            row = {"symbol": sym, "indicators": {"close": float(df["close"].iloc[-1]) if df is not None else None}}
+            if not plan:
+                rows.append(row | {"no_setup": {STRATEGY: why_not(df, cfg)}})
+                continue
+            rows.append(row | {"signals": [{"strategy": STRATEGY, "status": "new", "rr_net": None,
+                                            "score": cfg.score}]})
+            found += 1
+            ev = {"strategy": STRATEGY, "why": plan["why"], "rsi2": plan["rsi2"], "sma200": plan["sma200"],
+                  "atr10": plan["atr"], "regime": reg, "news": {}}
+            sid = self.db.insert("signals", {
+                "ts": now.isoformat(), "symbol": sym, "asset_class": "stock", "strategy": STRATEGY,
+                "direction": "long", "entry_price": plan["entry"], "stop_loss": plan["stop"],
+                "take_profit": plan["target"], "reward_risk": cfg.target_r - plan["rsi2"] / 100,   # deeper dip first
+                "data_ts": now.isoformat(), "status": "new", "evidence_json": json.dumps(ev, default=str),
+                "timeframe": "1d", "signal_key": f"{STRATEGY}:{sym}:{day}", "expires_ts": expires(now, cfg).isoformat(),
+                "data_status": "live", "scan_run_id": run_id, "validation_status": "forward_test"})
+            self.db.insert("signal_scores", {"signal_id": sid, "ts": now.isoformat(), "total_score": cfg.score,
+                                             "weights_json": json.dumps({"rule_based": STRATEGY})})
+        self.db.conn.execute("UPDATE scan_runs SET finished_ts=?, summary_json=? WHERE id=?",
+                             (datetime.now(timezone.utc).isoformat(), json.dumps({"symbols": rows, "d103": True}),
+                              run_id))
+        self.db.set_state("swing_scan", {"day": day, "run_id": run_id, "signals": found})
+        self.db.log_event("swing_scan", "swing", f"RSI(2) swing scan: {found} setups in {len(wl)} stocks "
+                                                 f"(regime {reg['trend']}/{reg['vol']})")
+        return [run_id]
 
     def bars15(self, sym: str, now: datetime):
         k = (sym, now.replace(second=0, microsecond=0))
@@ -218,7 +318,15 @@ class PaperTrader:
                 return {"signal_id": p.signal_id, "symbol": p.symbol, "strategy": p.strategy, "approved": False,
                         "reason": wait, "qty": 0, "planned_risk_usd": 0, "rr_net": None}
         from app.risk import leverage as LV
-        if LV.lev(self.s) > 1 and q is not None and p.stop and p.target and p.entry:   # D94 scalp levels
+        swing = p.asset_class == AssetClass.STOCK and p.strategy == self.s.swing.strategy
+        if swing:                               # D103: unlevered, own slot limit, backtested levels unchanged
+            n_sw = sum(1 for x in self.ledger.open_positions() if self._is_swing(x))
+            if n_sw >= self.s.swing.max_positions:
+                self.db.insert("strategy_decisions", {"ts": now.isoformat(), "signal_id": p.signal_id,
+                                                      "decision": "reject", "reason": "swing: max overnight positions"})
+                return {"signal_id": p.signal_id, "symbol": p.symbol, "strategy": p.strategy, "approved": False,
+                        "reason": "max overnight positions", "qty": 0, "planned_risk_usd": 0, "rr_net": None}
+        if LV.lev(self.s) > 1 and q is not None and p.stop and p.target and p.entry and not swing:   # D94 scalp levels
             import dataclasses
             from app.technical.indicators import atr, to_frame
             try:
@@ -279,6 +387,13 @@ class PaperTrader:
                                         "symbols": len(syms)})
             # shadow ledger first (every strategy, separate ledger; never affects the portfolio / risk / Alpaca)
             report["shadow"]["opened"] = self._shadow(lambda: self.shadow.open_from_signals(run_ids, self.quote, now))
+            try:                                                    # D103: near-the-close RSI(2) swing signals
+                sw = self.swing_scan(now)
+                if sw:
+                    report["scans"].append({"scanner": "stock_swing", "run_id": sw[0]})
+                run_ids += sw
+            except Exception as e:
+                self.db.log_error("swing", e)
             seen, checked = set(), 0
             for row in list(self.pending_signals(now)) + list(self.candidates(run_ids)):
                 if row["id"] in seen:

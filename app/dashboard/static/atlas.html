@@ -230,7 +230,7 @@ function render(d){
  buildTradeCharts(d.trade_charts||[]);
  $("n-pos").textContent=d.positions.length;
  $("t-pos").innerHTML=d.positions.length?`<div class="cards2">${d.positions.map(r=>`<div class="ic2"><div class="top"><div><div class="sym">${esc(r.symbol)}</div><div class="meta">${esc(r.market)} · ${esc(r.side)} · ${esc(r.strategy)} · ${r.leverage}x · opened ${tm(r.opened_ts)}</div></div><span class="badge ${r.pnl>=0?"good":"bad"}">${sg(r.pnl)}${usd(r.pnl)}</span></div>
-  ${kv([["Bought at",px(r.entry)],["Now",px(r.now)],["Stop-loss",px(r.sl),"dn"],["Take-profit",px(r.tp),"up"],["Direction","Long (up)"],["Profit/loss",sg(r.pnl)+usd(r.pnl),cls(r.pnl)]])}</div>`).join("")}</div>`:empty("No open trades right now.");
+  ${kv([["Bought at",px(r.entry)],["Now",px(r.now)],["Stop-loss",px(r.sl),"dn"],["Take-profit",px(r.tp),"up"],["Direction","Long (up)"],["Profit/loss",sg(r.pnl)+usd(r.pnl),cls(r.pnl)]])}${r.why?`<div class="mut" style="margin-top:6px">${r.overnight?"<b>Held overnight.</b> ":""}${esc(r.why)}</div>`:""}</div>`).join("")}</div>`:empty("No open trades right now.");
  $("n-tr").textContent=d.trades.length;
  $("t-tr").innerHTML=d.trades.length?`<div class="cards2">${d.trades.map(r=>`<div class="ic2"><div class="top"><div><div class="sym">${esc(r.symbol)}</div><div class="meta">${esc(r.market)} · ${esc(r.strategy)} · closed ${tm(r.closed_ts)}</div></div><span class="badge ${r.tone}">${esc(r.result)}</span></div>
   ${kv([["Bought at",px(r.entry)],["Sold at",px(r.exit)],["Result",sg(r.pnl)+usd(r.pnl),cls(r.pnl)],["Stop-loss",px(r.sl),"dn"],["Take-profit",px(r.tp),"up"],["Direction","Long (up)"]])}</div>`).join("")}</div>`:empty("No closed trades yet.");

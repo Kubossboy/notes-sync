@@ -44,7 +44,7 @@ def test_default_config_matrix_and_watch_only():
     s = load_settings()
     assert s.regime.enabled and s.regime.stock_watch_only
     assert set(s.regime.matrix["crypto"]["momentum_breakout"]) == {"bear/high", "bull/low"}
-    assert all(v == [] for v in s.regime.matrix["stock"].values())
+    assert all(v == [] for k, v in s.regime.matrix["stock"].items() if k != "rsi2_swing")   # D103: only the swing
 
 
 def test_plain_english_reasons():

@@ -60,21 +60,27 @@ STRATEGY = {
     "trend_continuation": "Trend continuation", "sr_breakout": "Ceiling breakout", "manual_news": "Manual (news)",
     "news_catalyst": "News catalyst", "bollinger_squeeze": "Quiet-then-breakout",
     "orderbook_imbalance": "Buyers outweigh sellers", "liquidity_change": "Sellers thinning out",
+    "rsi2_swing": "Overnight dip-buy (RSI-2)",
 }
 EXIT = {"take_profit": "Hit take-profit", "stop_loss": "Hit stop-loss", "time_exit": "Max holding time reached",
         "manual": "Closed manually", "liquidation": "Liquidated (leverage)", "trailing_stop": "Hit trailing stop",
-        "eod": "End of trading day"}
+        "eod": "End of trading day", "eod_flatten": "Closed before the market close",
+        "rsi2_sma5_exit": "Bounced back above its 5-day average (planned exit)",
+        "max_hold_days": "Held the maximum 10 trading days"}
 
 _REG = {"bull": "rising", "bear": "falling", "sideways": "sideways"}
 
 RULES: list[tuple[str, object]] = [
     (rf"net reward/risk {N} < {N} \(target capped by resistance {N}\)", lambda m, c: _rr(m, c, True)),
     (rf"net reward/risk {N} < {N}", lambda m, c: _rr(m, c, False)),
+    (r"swing_entry_window.*", lambda m, c: "Overnight dip-buy only enters in the last 15 minutes before the close."),
+    (r"swing: max overnight positions", lambda m, c: "Already holding the maximum number of overnight trades."),
+    (r"regime unknown: overnight swing off", lambda m, c: "Market mood unknown, so no overnight trades today."),
     (r"llm veto: (.+)", lambda m, c: f"Blocked by the AI final check: {m[1]}"),
     (r"regime (bull|bear|sideways)/(high|low): strategy off in this market",
      lambda m, c: f"Skipped: this strategy is off in {_REG[m[1]]}, {m[2]}-volatility markets."),
     (r"watch-only: stock entries paused.*",
-     lambda m, c: "Watch only: the bot logs stock signals but does not trade stocks (no stock strategy proved profitable in testing)."),
+     lambda m, c: "Watch only: intraday stock strategies are paused (none proved profitable in testing); only the overnight dip-buy trades stocks."),
     (rf"depth within 0\.5% {N} USD < {N}", lambda m, c: f"Too few buy/sell orders near the price "
                                                       f"({_usd(m[1])} within 0.5%, needs {_usd(m[2])}), "
                                                       f"so a trade could move the price."),

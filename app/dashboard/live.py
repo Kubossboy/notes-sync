@@ -144,6 +144,9 @@ def build_view(settings: Settings, db_path=None, now: datetime | None = None, li
         executed = _rows(db, "SELECT ts, symbol, strategy, scan_run_id, entry_price, stop_loss, take_profit FROM signals "
                              "WHERE status='executed' ORDER BY id DESC LIMIT 50")
         eq = db.conn.execute("SELECT ts, equity_usd FROM equity_snapshots ORDER BY id").fetchall()
+        whys = {r["symbol"]: json.loads(r["evidence_json"] or "{}").get("why") for r in _rows(
+            db, "SELECT p.symbol, s.evidence_json FROM positions p JOIN signals s ON s.id = p.signal_id "
+                "WHERE p.status = 'open'", ())}
         regs = {k: json.loads(v) for k, v in db.conn.execute(
             "SELECT key, value_json FROM system_state WHERE key IN ('regime_stock', 'regime_crypto', "
             "'llm_news_summary', 'llm_verdicts', 'llm_budget')").fetchall()}
@@ -188,7 +191,9 @@ def build_view(settings: Settings, db_path=None, now: datetime | None = None, li
         "symbol": p["symbol"], "market": "Crypto" if p["asset_class"] == "crypto" else "Stock", "side": "Long",
         "strategy": strategy(p["strategy"]), "entry": p["entry_price"], "now": p.get("current_price"),
         "sl": p["stop_loss"], "tp": p["take_profit"], "pnl": p.get("unrealized_pnl_usd"), "leverage": p.get("leverage") or 1,
-        "opened_ts": p["opened_ts"], "tv": tv_symbol(p["symbol"], p["asset_class"])} for p in d.get("portfolio", [])]
+        "opened_ts": p["opened_ts"], "tv": tv_symbol(p["symbol"], p["asset_class"]),
+        "why": whys.get(p["symbol"]),
+        "overnight": p["strategy"] == settings.swing.strategy} for p in d.get("portfolio", [])]
     trades = [{
         "symbol": c["symbol"], "market": "Crypto" if c["asset_class"] == "crypto" else "Stock", "side": "Long",
         "strategy": strategy(c["strategy"]), "entry": c["entry_price"], "exit": c["exit_price"],
