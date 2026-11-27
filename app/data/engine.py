@@ -212,7 +212,7 @@ class MarketDataEngine:
             except DataFormatError as e:
                 attempts.append(SourceAttempt(name, False, str(e), "invalid"))
                 self.db.log_error(f"data.{name}", e)
-                self._halt(f"invalid quote from {name} for {symbol}: {e}")
+                self._halt_or_warn(symbol, f"invalid quote from {name} for {symbol}: {e}")
                 continue
             except ProviderError as e:
                 attempts.append(SourceAttempt(name, False, str(e),
@@ -220,7 +220,7 @@ class MarketDataEngine:
                 continue
             if q.bid and q.ask and q.ask < q.bid:
                 attempts.append(SourceAttempt(name, False, "crossed book (ask < bid)", "invalid"))
-                self._halt(f"crossed quote from {name} for {symbol}")
+                self._halt_or_warn(symbol, f"crossed quote from {name} for {symbol}")
                 continue
             quotes.append(q)
             attempts.append(SourceAttempt(name, True))
@@ -234,9 +234,9 @@ class MarketDataEngine:
         cc = cross_check(symbol, ac, usable, self.cfg, kind="quote")
         self._store_crosscheck(cc)
         if cc.verdict == "divergent":
-            self._halt(f"quote divergence on {symbol}: {cc.deviations_bps}")
+            self._halt_or_warn(symbol, f"quote divergence on {symbol}: {cc.deviations_bps}")
         elif cc.verdict == "unavailable" and not all(a.kind == "unsupported" for a in attempts):
-            self._halt(f"no quote for {symbol} from any source")
+            self._halt_or_warn(symbol, f"no quote for {symbol} from any source")
         return cc, quotes, attempts
 
     # ------------------------------------------------------------ persistence
@@ -296,6 +296,12 @@ class MarketDataEngine:
         """Core symbols keep the global SAFE STATE on bad data; others are only quarantined (D98)."""
         core = self.cfg.core_symbols
         return not core or symbol.upper() in core
+
+    def _halt_or_warn(self, symbol: str, reason: str) -> bool:
+        if self._is_core(symbol):
+            return self._halt(reason)
+        log.warning("market data problem (non-core, no halt): %s", reason)
+        return False
 
     def _halt(self, reason: str) -> bool:
         log.error("market data problem: %s", reason)

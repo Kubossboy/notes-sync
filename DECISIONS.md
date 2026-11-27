@@ -297,3 +297,6 @@ The overnight NVDA/QQQ paper positions were closed by `manage_position` catch-up
   from GitHub secrets and the workflow refuses to publish without them.
 - New Czech dashboard (static template + data.json) with the TradingView tv.js widget; `export` raises if the template
   lacks it. Risk rules unchanged (min RR 1.2, Bybit fees on crypto, Alpaca fees on stocks).
+- D98 addendum: quote-level problems (invalid / crossed / divergent / missing quote) on non-core symbols no longer
+  halt; the trader refuses to trade a divergent quote instead. After the 27.11 US early close an empty Alpaca quote
+  for RIOT had halted everything. `ops/resume.txt` + `scripts/apply_resume.py` give CI a one-shot, idempotent resume.

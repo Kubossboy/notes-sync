@@ -59,6 +59,9 @@ jobs:
             echo "no state branch yet; a fresh ledger will be created on first trade"
           fi
 
+      - name: Apply one-shot resume request (ops/resume.txt)
+        run: .venv/bin/python scripts/apply_resume.py || echo "resume request failed"
+
       - name: Paper trade loop (~4 minutes, 30s apart)
         run: |
           set -euo pipefail

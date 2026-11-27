@@ -39,7 +39,7 @@ class PaperTrader:
     # ------------------------------------------------------------------ market access
     def quote(self, symbol: str, now: datetime) -> MarketQuote | None:
         cc, quotes, _ = self.engine.get_quote_consensus(symbol)
-        if cc.consensus is None:
+        if cc.consensus is None or cc.verdict == "divergent":     # non-core divergence no longer halts: never trade it
             return None
         maxsp = self.s.data.max_quote_spread_bps
         book = [q for q in quotes if q.bid and q.ask and q.quote_currency == "USD"
