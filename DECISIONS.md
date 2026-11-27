@@ -474,3 +474,7 @@ Rule: a strategy is enabled in a regime only if that cell is positive both IS an
 - **First local run (2026-11-27):** crypto: no change (neighbours worse in-sample; tighter R:R ratios fail the
   1.2 gate). Overnight dip-buy: stop 2.0 -> 1.5 x ATR would pass (IS +0.245 vs +0.198 R, OOS +0.334 vs +0.229 R over 48
   trades), so the first scheduled run may adopt it.
+- **Ops fix (found while verifying D104):** the state DB had reached 98.3 MiB (GitHub hard limit 100 MiB), mostly
+  the raw intraday candle cache. Each run now prunes candle observations older than 3 days and per-symbol scan
+  summaries older than 3 days, then VACUUMs (`app/database/retention.py`, `app.main prune`): 98 -> 49 MB. Trades,
+  signals, reviews, the risk journal and news are never pruned. Also fixed `learn export` (local `Path` shadowing).

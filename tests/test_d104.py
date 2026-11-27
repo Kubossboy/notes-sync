@@ -154,3 +154,16 @@ def test_dashboard_learning_card(settings, db, tmp_path, monkeypatch):
     assert v["changes"][0]["text"].startswith("Lowered RSI threshold 5→4 for Overnight dip-buy")
     assert v["events"][0]["text"].startswith("Paused momentum_breakout after 6 losses in a row")
     assert v["reviewed"] == 6 and v["causes"]
+
+
+def test_retention_prunes_only_old_candle_cache(db):
+    from app.database.retention import prune
+    old, new = (NOW - timedelta(days=5)).isoformat(), NOW.isoformat()
+    for ts in (old, new):
+        db.insert("market_observations", {"observed_ts": ts, "source_ts": ts, "symbol": "BTC-USD", "asset_class": "crypto",
+                                          "source": "x", "kind": "candle", "timeframe": "5m", "data_status": "live", "open": 1, "high": 1,
+                                          "low": 1, "close": 1, "volume": 1, "is_complete_candle": 1})
+    pos(db, -1.0, 1, closed_ts=old)
+    assert prune(db, 3, NOW)["candles_deleted"] == 1
+    assert db.conn.execute("SELECT COUNT(*) FROM market_observations").fetchone()[0] == 1
+    assert db.conn.execute("SELECT COUNT(*) FROM positions").fetchone()[0] == 1              # trades never pruned

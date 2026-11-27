@@ -101,6 +101,7 @@ def main(argv: list[str] | None = None) -> int:
     ex = sub.add_parser("export", help="static read-only dashboard snapshot for publishing (scrubbed)")
     ex.add_argument("--out", default="var/site"); ex.add_argument("--no-live-prices", action="store_true")
     sub.add_parser("forwardtest", help="forward paper test stats (news-driven, internal ledger only)")
+    sub.add_parser("prune", help="state-DB retention: old intraday candle cache + scan summaries, then VACUUM")
     lr = sub.add_parser("learn", help="D104: weekly bounded self-tuning | export the learning log")
     lr.add_argument("what", choices=["weekly", "export"]); lr.add_argument("--out", default="var/learning_log.json")
     lr.add_argument("--groups", nargs="*", default=["rsi2_swing", "crypto"])
@@ -300,6 +301,9 @@ def main(argv: list[str] | None = None) -> int:
             cfg = publish_config(ctx.settings)
             export(ctx.settings, Path(a.out), cfg["slug"], live_prices=not a.no_live_prices)
             print(json.dumps({"out": a.out, "project": cfg["project"], "path": "/" + cfg["slug"] + "/"}))
+        elif a.cmd == "prune":
+            from app.database.retention import prune
+            print(json.dumps(prune(ctx.db)))
         elif a.cmd == "learn":
             if a.what == "weekly":
                 from app.learning.tuner import weekly
@@ -308,8 +312,9 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 rows = [dict(r) for r in ctx.db.conn.execute("SELECT ts, kind, strategy, detail FROM learning_events "
                                                              "ORDER BY id")]
-                Path(a.out).parent.mkdir(parents=True, exist_ok=True)
-                Path(a.out).write_text(json.dumps({"events": rows}, indent=1) + "\n")
+                import pathlib
+                pathlib.Path(a.out).parent.mkdir(parents=True, exist_ok=True)
+                pathlib.Path(a.out).write_text(json.dumps({"events": rows}, indent=1) + "\n")
                 print(json.dumps({"out": a.out, "events": len(rows)}))
         elif a.cmd == "forwardtest":
             from app.quant.engine import forward_test_stats

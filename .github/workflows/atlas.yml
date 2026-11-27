@@ -130,6 +130,8 @@ jobs:
           set -euo pipefail
           test -f var/atlas.sqlite3
           .venv/bin/python -m app.main learn export --out var/learning_log.json || echo "learning log export failed"
+          .venv/bin/python -m app.main prune || echo "prune failed"      # GitHub rejects files > 100 MB
+          ls -l var/atlas.sqlite3
           bash scripts/commit_state.sh "Update paper ledger" var/atlas.sqlite3 var/learning_log.json
 
       - name: Chain next run
