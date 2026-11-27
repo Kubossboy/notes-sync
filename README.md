@@ -1,8 +1,6 @@
-# ATLAS Trading AI
+# notes-sync
 
-**A**utonomous **T**rading & **M**arket **I**ntelligence **S**ystem: a modular
-market-intelligence and **paper-trading-only** platform for US stocks and crypto
-(day trading / short-term momentum, $1,000 simulated portfolio).
+Local utility scripts and a scheduled sync job.
 
 > **Paper trading only.** Live order execution, leverage, margin, martingale and
 > averaging down are rejected by config validation, by URL guards in code, and by
@@ -19,10 +17,8 @@ Zprávy skóruje lokální model FinBERT. Poplatky u krypta kopírují Bybit USD
 (5,5 bps taker na stranu z celé notional + 3 bps slippage); akcie mají $0 provizi
 a 5 bps slippage.
 
-Běží **zdarma na GitHub Actions každou 5. minutu** (workflow `atlas`). Stav ledgeru
-je ve větvi `state`. Živý dashboard:
-
-https://atlas-724f10c62b.pages.dev/DCaDzBY7gXsx-IfjJsY2FRLW/
+Běží **zdarma na GitHub Actions** (workflow `atlas`, cron každých 5 minut plus samočinné řetězení). Stav ledgeru
+je ve větvi `state`.
 
 **Zastavení:** v GitHubu → Actions → atlas → `...` → Disable workflow.
 

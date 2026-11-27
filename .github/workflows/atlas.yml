@@ -6,9 +6,10 @@ on:
   workflow_dispatch:
 concurrency:
   group: atlas
-  cancel-in-progress: true
+  cancel-in-progress: false
 permissions:
   contents: write
+  actions: write
 env:
   PYTHONUNBUFFERED: "1"
   HF_HUB_DISABLE_PROGRESS_BARS: "1"
@@ -77,7 +78,7 @@ jobs:
           cp -f var/atlas.sqlite3 "${RUNNER_TEMP}/st/var/atlas.sqlite3"
           export GIT_INDEX_FILE="${RUNNER_TEMP}/state.index"
           export GIT_WORK_TREE="${RUNNER_TEMP}/st"
-          git config user.name "ATLAS Dev"
+          git config user.name "sync"
           git config user.email "atlas@localhost"
           rm -f "$GIT_INDEX_FILE"
           if git fetch origin state:state; then
@@ -96,3 +97,17 @@ jobs:
             COMMIT=$(git commit-tree "$TREE" -m "Initial paper ledger")
           fi
           git push origin "$COMMIT":refs/heads/state
+
+      - name: Chain next run
+        if: always() && !cancelled()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          QUEUED=$(gh run list --workflow atlas.yml --repo "$GITHUB_REPOSITORY" --status queued --json databaseId --jq 'length')
+          WAITING=$(gh run list --workflow atlas.yml --repo "$GITHUB_REPOSITORY" --status waiting --json databaseId --jq 'length')
+          if [ "${QUEUED:-0}" -gt 0 ] || [ "${WAITING:-0}" -gt 0 ]; then
+            echo "skip dispatch: a run is already queued or waiting"
+            exit 0
+          fi
+          gh workflow run atlas.yml --ref main
