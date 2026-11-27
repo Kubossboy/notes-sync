@@ -3,6 +3,7 @@ manage open positions -> (if trading allowed) scan -> risk-evaluate complete sig
 -> simulate fills -> journal -> equity snapshot. Kill switch included."""
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 
 from app.config import Settings
@@ -117,6 +118,42 @@ class PaperTrader:
             f"SELECT s.*, sc.total_score FROM signals s JOIN signal_scores sc ON sc.signal_id = s.id "
             f"WHERE s.scan_run_id IN ({qm}) AND s.status = 'new' "
             f"ORDER BY s.reward_risk DESC, sc.total_score DESC", run_ids).fetchall()
+
+    def _llm_check(self, row, now: datetime) -> dict | None:
+        """D102: one APPROVE / VETO per signal (cached). Any failure -> None (entry proceeds as before)."""
+        if not self.s.llm.enabled:
+            return None
+        try:
+            from app.llm import LOG_KEY, LocalLLM
+            for v in reversed(self.db.get_state(LOG_KEY) or []):
+                if v.get("signal_id") == row["id"]:
+                    return v
+            llm = LocalLLM(self.s, self.db)
+            ev = json.loads(row["evidence_json"] or "{}")
+            news = ev.get("news") or {}
+            agg = news.get("aggregate")
+            fin = round(float(agg), 2) if isinstance(agg, (int, float)) else None
+            sym = row["symbol"]
+            tick = sym.split("-")[0] if row["asset_class"] == "crypto" else sym
+            hl = [dict(r) for r in self.db.conn.execute(
+                "SELECT title, sentiment FROM news_events WHERE (tickers LIKE ? OR tickers LIKE ?) "
+                "AND COALESCE(published_ts, fetched_ts) >= ? ORDER BY id DESC LIMIT 6",
+                (f"%,{tick},%", f"%,{sym},%", (now - timedelta(hours=24)).isoformat()))]
+            sig = {"signal_id": row["id"], "symbol": sym, "asset_class": row["asset_class"],
+                   "strategy": row["strategy"], "entry": row["entry_price"], "stop": row["stop_loss"],
+                   "target": row["take_profit"], "rr": row["reward_risk"], "finbert": fin}
+            reg = self.db.get_state(f"regime_{row['asset_class']}")
+            v = llm.check(sig, reg, hl)
+            if v["decision"] == "SKIPPED":
+                return None                                  # fallback logged inside; not cached -> retried later
+            llm.record(sig, v, now)
+            if v["decision"] == "VETO":
+                self.db.insert("strategy_decisions", {"ts": now.isoformat(), "signal_id": row["id"],
+                                                      "decision": "reject", "reason": f"llm veto: {v['reason']}"})
+            return v
+        except Exception as e:
+            self.db.log_error("llm", e)
+            return None
 
     PENDING_KEY = "pending_limit_entries"
 
@@ -242,14 +279,27 @@ class PaperTrader:
                                         "symbols": len(syms)})
             # shadow ledger first (every strategy, separate ledger; never affects the portfolio / risk / Alpaca)
             report["shadow"]["opened"] = self._shadow(lambda: self.shadow.open_from_signals(run_ids, self.quote, now))
-            seen = set()
+            seen, checked = set(), 0
             for row in list(self.pending_signals(now)) + list(self.candidates(run_ids)):
                 if row["id"] in seen:
                     continue
                 seen.add(row["id"])
                 if not self.safe.trading_allowed():
                     break
+                if checked < self.s.llm.max_candidates:            # D102: AI final check, can only veto
+                    checked += 1
+                    v = self._llm_check(row, now)
+                    if v and v["decision"] == "VETO":
+                        report["executions"].append({"signal_id": row["id"], "symbol": row["symbol"],
+                                                     "approved": False, "reason": f"AI veto: {v['reason']}"})
+                        continue
                 report["executions"].append(self.execute_signal(row, now))
+        if self.s.llm.enabled:
+            try:
+                from app.llm import LocalLLM
+                LocalLLM(self.s, self.db).summarize_news(now)
+            except Exception as e:                                  # never let the LLM break a cycle
+                self.db.log_error("llm", e)
         st = self.ledger.state(now)
         self.ledger.snapshot(st, "cycle")
         report["portfolio"] = summary(st, self.s)

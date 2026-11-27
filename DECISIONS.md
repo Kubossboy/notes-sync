@@ -408,3 +408,17 @@ Rule: a strategy is enabled in a regime only if that cell is positive both IS an
   - Before (all taker): IS 63 trades, +0.13 R; OOS 26 trades, +0.28 R.
 - The backtest models the no-fill risk: the next bar must trade through the limit. Stocks: the change in
   slippage moved results by at most about 0.03 R; no conclusion changed.
+
+## D102 — Local LLM (Qwen2.5-3B) for news summary + final veto check (2026-11-27)
+- **What:** Qwen2.5-3B-Instruct Q4_K_M GGUF on CPU via llama.cpp `llama-server` (b12818), started in the background by the
+  workflow so it loads while deps install; model + binary cached with actions/cache (`llm-qwen25-3b-q4km-llamacpp-b12818-v1`).
+- **Job 1:** one plain-English news summary per run (≤4 bullets, top |FinBERT| headlines of the last 12 h) → dashboard
+  "News summary" card + first item of the News analyst step.
+- **Job 2:** final check of the top ≤3 candidates right before entry (setup, regime, FinBERT, 24 h headlines) → JSON
+  `{decision: APPROVE|VETO, reason}` (grammar-constrained). VETO blocks the entry (`llm veto: …` → "Blocked by the AI final
+  check: …" in Filter/Entry). It can only remove trades, never add or loosen rules; it may not veto because of the regime.
+- **Safety:** `llm.enabled` flag; hard budget 60 s of LLM time per Actions run (tracked in system_state across cycles),
+  per-call timeout = min(25 s, budget left). Server down / timeout / bad JSON / budget gone → log `llm_fallback` and
+  behave exactly as before (entry proceeds). FinBERT stays.
+- **Local timings (8-core box):** load 2 s, summary 5–13 s, check 1.7–2.0 s. Actions timings: see run logs ("LLM loaded in",
+  "LLM budget").

@@ -102,6 +102,12 @@ def _cycles(runs: list[dict], executed_by_run: dict, ctx: _Ctx, limit: int = 10)
     return out
 
 
+def llm_view(settings: Settings, regs: dict) -> dict:
+    b = regs.get("llm_budget") or {}
+    return {"enabled": settings.llm.enabled, "spent_s": b.get("spent"), "budget_s": settings.llm.budget_s,
+            "calls": b.get("calls"), "fallbacks": b.get("fallbacks")}
+
+
 def regime_view(settings: Settings, regs: dict) -> list[dict]:
     """D100: current market regime per asset class + which strategies may trade in it (plain English)."""
     rc = settings.regime
@@ -139,7 +145,8 @@ def build_view(settings: Settings, db_path=None, now: datetime | None = None, li
                              "WHERE status='executed' ORDER BY id DESC LIMIT 50")
         eq = db.conn.execute("SELECT ts, equity_usd FROM equity_snapshots ORDER BY id").fetchall()
         regs = {k: json.loads(v) for k, v in db.conn.execute(
-            "SELECT key, value_json FROM system_state WHERE key IN ('regime_stock', 'regime_crypto')").fetchall()}
+            "SELECT key, value_json FROM system_state WHERE key IN ('regime_stock', 'regime_crypto', "
+            "'llm_news_summary', 'llm_verdicts', 'llm_budget')").fetchall()}
     finally:
         db.close()
     executed_by_run: dict = {}
@@ -202,6 +209,11 @@ def build_view(settings: Settings, db_path=None, now: datetime | None = None, li
         return {"ts": n.get("published_ts") or n.get("fetched_ts"), "tone": tone,
                 "text": f"{label.capitalize()}" + (f" ({sc:+.2f})" if sc is not None else "") + f": {n.get('title')}"}
     last_c = cycles[0] if cycles else None
+    summ = regs.get("llm_news_summary")
+    verdicts = [v for v in reversed(regs.get("llm_verdicts") or []) if (v.get("ts") or "") >= day_ago]
+    ai_items = [{"ts": v["ts"], "tone": "bad" if v["decision"] == "VETO" else "good",
+                 "text": (f"AI check blocked {v['symbol']}: {v['reason']}" if v["decision"] == "VETO"
+                          else f"AI check approved {v['symbol']}: {v['reason']}")} for v in verdicts[:5]]
     pipeline = [
         {"key": "scan", "icon": "scan", "label": "Scan", "count": sum(c["pairs"] for c in cycles),
          "desc": "Every ~30 seconds the bot checks the next batch of stocks and crypto for a trade setup.",
@@ -217,11 +229,12 @@ def build_view(settings: Settings, db_path=None, now: datetime | None = None, li
         {"key": "analyst", "icon": "brain", "label": "News analyst (FinBERT)", "count": len(news),
          "desc": "Reads market headlines and rates each one positive, negative or neutral. Good news can support a trade; bad news can block one.",
          "latest": (f"Last: {sentiment(news[0].get('sentiment'))[0]} headline") if news else "No headlines yet",
-         "items": [news_item(n) for n in news[:10]]},
+         "items": ([{"ts": summ["ts"], "tone": "neutral", "text": "AI news summary: " + summ["text"].replace("\n", " ")}]
+                   if summ else []) + [news_item(n) for n in news[:10]]},
         {"key": "entry", "icon": "entry", "label": "Entry", "count": len(entries24),
          "desc": "When an idea passes every check, the bot opens a simulated (paper) trade with a stop-loss and a take-profit.",
          "latest": (f"Last: bought {entries24[0]['symbol']}") if entries24 else "No new trades in 24 h",
-         "items": ([{"ts": e["ts"], "tone": "good",
+         "items": ai_items + ([{"ts": e["ts"], "tone": "good",
                      "text": f"Bought {e['symbol']} ({strategy(e['strategy'])}) at {e['entry_price']:,.4g}, "
                              f"stop-loss {e['stop_loss']:,.4g}, take-profit {e['take_profit']:,.4g}"} for e in entries24[:10]]
                    or [{"ts": best_near["ts"] if best_near else None, "tone": "neutral",
@@ -290,4 +303,7 @@ def build_view(settings: Settings, db_path=None, now: datetime | None = None, li
                      "scanned_24h_crypto": len(scanned_24h.get("crypto", ())), "scans_24h": len(runs)},
         "equity_curve": equity, "tv_symbols": tv, "errors": errors,
         "regime": regime_view(settings, regs),
+        "news_summary": None if not summ else {"ts": summ["ts"], "points": summ["text"].split("\n"),
+                                               "model": summ.get("model")},
+        "llm": llm_view(settings, regs),
     }

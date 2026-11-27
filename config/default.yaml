@@ -191,3 +191,12 @@ regime:
       trend_continuation: []
       sr_breakout: []
       news_momentum: []
+
+# D102: local Qwen2.5-3B-Instruct on llama-server (CPU, started by the workflow). News summary + final VETO check.
+# Never adds trades. Any failure / timeout / bad output -> entries proceed as before (logged).
+llm:
+  enabled: true
+  url: http://127.0.0.1:8088
+  budget_s: 60
+  call_timeout_s: 25
+  max_candidates: 3

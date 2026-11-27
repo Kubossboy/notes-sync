@@ -1,0 +1,44 @@
+# ATLAS scalp profile (D95 + D96 + D97) — overlay on config/default.yaml.
+# Enable:  ATLAS_CONFIG=config/scalp.yaml INTERVAL=30 ./scripts/run_loop.sh
+# Revert:  unset ATLAS_CONFIG (and INTERVAL) and restart the paper loop.
+# PAPER only. Does not change daily-loss caps, per-trade risk caps, max positions,
+# kill switch, or execution.mode.
+execution:
+  mode: "paper"
+
+risk:
+  crypto_max_hold_hours: 2          # was 24
+  symbol_cooldown_minutes_after_loss: 20  # was 60; still required after a loss
+  lev_tp_atr: 1.5                   # was 0.75 in D95 / 1.25 default; tighter 0.75 ATR targets failed net R:R 1.2 after fees
+  min_reward_risk: 1.5              # D97: was 2.0 (unlevered / default profile stays 2.0)
+  lev_min_reward_risk: 1.0          # D97: was 1.2; binding for 100x paper leverage
+
+scoring:
+  min_score_to_trade: 40            # D96: was 60 (spec floor); observed auto-signals scored 36-62, typical 40-50
+
+scanner:
+  stock_timeframe: "1m"             # was 5m
+  crypto_timeframe: "5m"            # was 15m (1m crypto moves are too small vs costs)
+  lookback_bars: 180                # was 400
+  cap_target_by_resistance: false   # D96: nearby resistance was collapsing net R:R to 0.0-0.6 (sometimes negative)
+  max_stop_atr: 6.0                 # was 3; two otherwise-valid setups were rejected as "stop too wide"
+  stock_strategies:
+    opening_range_breakout:  {params: {min_rvol: 1.2, target_r: 2.0}}
+    vwap_reclaim:            {params: {min_rvol: 1.0, lookback: 4, min_bars_below: 2, target_r: 2.0}}
+    momentum_breakout:       {params: {donchian: 12, min_roc: 0.15, min_rvol: 1.2, rsi_max: 85, target_r: 2.0}}
+    relative_volume_anomaly: {params: {min_rvol: 2.0, target_r: 2.0}}
+    trend_continuation:      {params: {pullback_bars: 2, rsi_min: 35, rsi_max: 70, target_r: 2.0}}
+    sr_breakout:             {params: {min_rvol: 1.1, target_r: 2.0}}
+    news_momentum:           {params: {min_rvol: 1.3, high_lookback: 4, min_confidence: 0.5, target_r: 2.0}}
+  crypto_strategies:
+    momentum_breakout:       {params: {donchian: 20, min_roc: 0.2, min_rvol: 1.4, rsi_max: 85, target_r: 2.0}}
+    volume_expansion:        {params: {min_rvol: 1.5, target_r: 2.0}}
+    orderbook_imbalance:     {params: {min_imbalance: 0.2, target_r: 2.0}}
+    volatility_expansion:    {params: {squeeze_pctile: 30, squeeze_lookback: 40, target_r: 2.0}}
+    trend_continuation:      {params: {pullback_bars: 2, rsi_min: 35, rsi_max: 72, target_r: 2.0}}
+    sr_breakout:             {params: {min_rvol: 1.2, target_r: 2.0}}
+    liquidity_change:        {params: {min_history: 4, ask_drop_pct: 40, max_bid_drop_pct: 25, target_r: 2.0}}
+
+validation:
+  paper_trade_unvalidated: true     # D96: no strategy is validated; otherwise the risk engine never auto-enters
+  forward_test_min_score: 40        # same floor as scoring.min_score_to_trade for this overlay

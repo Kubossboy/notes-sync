@@ -15,7 +15,7 @@ def settings(tmp_path):
                                               "log_dir": str(tmp_path / "logs")},
                                     "app": {"environment": "test"},
                                     "execution": {"paper_leverage": 1, "crypto_entry_order": "market"},  # legacy fills; D101 in test_d101
-                                    "news": {"finbert_enabled": False}})
+                                    "news": {"finbert_enabled": False}, "llm": {"enabled": False}})
 
 
 @pytest.fixture

@@ -325,6 +325,21 @@ class RegimeSection(_Strict):
     stock_watch_only: bool = False    # stocks: scan + log signals, never open paper entries
 
 
+class LLMSection(_Strict):
+    """D102 local Qwen2.5-3B-Instruct (llama-server on CPU). Only summarises news and may VETO an entry."""
+    enabled: bool = False
+    url: str = "http://127.0.0.1:8088"
+    model_name: str = "Qwen2.5-3B-Instruct Q4_K_M"
+    budget_s: float = Field(60, gt=0, le=120)       # hard total per GitHub run (all cycles together)
+    call_timeout_s: float = Field(25, gt=0)
+    min_call_s: float = Field(4, ge=0)               # less budget left than this -> skip (fallback)
+    max_candidates: int = Field(3, ge=0, le=3)       # final check for the top 1-3 candidates per cycle
+    summary_hours: float = 12
+    summary_headlines: int = 8
+    summary_max_tokens: int = 220
+    check_max_tokens: int = 60
+
+
 class Settings(_Strict):
     app: AppSection = AppSection()
     paths: PathsSection = PathsSection()
@@ -339,6 +354,7 @@ class Settings(_Strict):
     validation: ValidationSection = ValidationSection()
     http: HttpSection = HttpSection()
     regime: RegimeSection = RegimeSection()
+    llm: LLMSection = LLMSection()
 
     def config_hash(self) -> str:
         blob = json.dumps(self.model_dump(mode="json"), sort_keys=True).encode()

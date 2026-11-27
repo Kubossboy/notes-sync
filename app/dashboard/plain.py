@@ -70,6 +70,7 @@ _REG = {"bull": "rising", "bear": "falling", "sideways": "sideways"}
 RULES: list[tuple[str, object]] = [
     (rf"net reward/risk {N} < {N} \(target capped by resistance {N}\)", lambda m, c: _rr(m, c, True)),
     (rf"net reward/risk {N} < {N}", lambda m, c: _rr(m, c, False)),
+    (r"llm veto: (.+)", lambda m, c: f"Blocked by the AI final check: {m[1]}"),
     (r"regime (bull|bear|sideways)/(high|low): strategy off in this market",
      lambda m, c: f"Skipped: this strategy is off in {_REG[m[1]]}, {m[2]}-volatility markets."),
     (r"watch-only: stock entries paused.*",

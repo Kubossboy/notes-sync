@@ -41,6 +41,45 @@ jobs:
             .wrangler-cache
           key: ${{ runner.os }}-hf-wrangler-v1
 
+      # D102: local LLM (Qwen2.5-3B Q4_K_M via llama.cpp). Any failure here only disables the AI step.
+      - id: llmcache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/atlas-llm
+          key: llm-qwen25-3b-q4km-llamacpp-b12818-v1
+
+      - name: Fetch LLM (cache miss only)
+        id: llmfetch
+        if: steps.llmcache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        timeout-minutes: 4
+        run: |
+          set -euo pipefail
+          D=~/.cache/atlas-llm; mkdir -p "$D"
+          curl -fsSL https://github.com/ggml-org/llama.cpp/releases/download/b12818/llama-b12818-bin-ubuntu-x64.tar.gz | tar -xz -C "$D"
+          curl -fsSL -o "$D/model.part" https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf
+          mv "$D/model.part" "$D/qwen2.5-3b-instruct-q4_k_m.gguf"
+
+      - name: Save LLM cache
+        if: steps.llmcache.outputs.cache-hit != 'true' && steps.llmfetch.outcome == 'success'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/atlas-llm
+          key: llm-qwen25-3b-q4km-llamacpp-b12818-v1
+
+      - name: Start LLM server in background (loads while deps install)
+        continue-on-error: true
+        run: |
+          D=~/.cache/atlas-llm
+          BIN=$(ls "$D"/llama-b12818/llama-server 2>/dev/null || true)
+          if [ -z "$BIN" ] || [ ! -f "$D/qwen2.5-3b-instruct-q4_k_m.gguf" ]; then echo "LLM not available; running without it"; exit 0; fi
+          T0=$(date +%s%3N)
+          LD_LIBRARY_PATH="$(dirname "$BIN")" nohup "$BIN" -m "$D/qwen2.5-3b-instruct-q4_k_m.gguf" -c 4096 -t "$(nproc)" \
+            --host 127.0.0.1 --port 8088 > "$RUNNER_TEMP/llama.log" 2>&1 &
+          nohup bash -c "for i in \$(seq 1 300); do curl -fs http://127.0.0.1:8088/health >/dev/null && { echo \"LLM loaded in \$(( \$(date +%s%3N) - $T0 )) ms\"; exit; }; sleep 0.5; done; echo 'LLM load timed out'" > "$RUNNER_TEMP/llm_load.txt" 2>&1 &
+          echo "llama-server starting"
+
       - name: Install deps (CPU torch)
         run: |
           python -m venv .venv
@@ -72,6 +111,8 @@ jobs:
             [ "$LEFT" -le 5 ] && break
             sleep 30
           done
+          cat "$RUNNER_TEMP/llm_load.txt" 2>/dev/null || echo "LLM: not started"
+          .venv/bin/python -c "import json,sqlite3;r=sqlite3.connect('var/atlas.sqlite3').execute(\"select value_json from system_state where key='llm_budget'\").fetchone();print('LLM budget:', r and r[0])" || true
 
       - name: Export dashboard and publish to Cloudflare Pages
         run: |
