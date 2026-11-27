@@ -1,1 +1,1 @@
-ATLAS paper-trading ledger. This branch contains only var/atlas.sqlite3. Do not store secrets here.
+Paper ledger state only. Do not store secrets here.
