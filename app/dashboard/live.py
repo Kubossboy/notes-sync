@@ -50,7 +50,7 @@ def build_view(settings: Settings, db_path=None, now: datetime | None = None, li
     try:
         runs = _scan_rows(db, (now - timedelta(hours=24)).isoformat())
         closed = _rows(db, "SELECT symbol, asset_class, strategy, direction, entry_price, exit_price, realized_pnl_usd, "
-                           "r_multiple, exit_reason, opened_ts, closed_ts, leverage FROM positions WHERE status='closed' "
+                           "r_multiple, exit_reason, opened_ts, closed_ts, leverage, initial_stop, initial_target FROM positions WHERE status='closed' "
                            "ORDER BY closed_ts DESC LIMIT 25")
         eq = db.conn.execute("SELECT ts, equity_usd FROM equity_snapshots ORDER BY id").fetchall()
     finally:
@@ -104,8 +104,67 @@ def build_view(settings: Settings, db_path=None, now: datetime | None = None, li
            for s in traded]
           + [{"label": s, "tv": tv_symbol(s, "crypto"), "group": "Krypto"} for s in wl_c if s not in traded]
           + [{"label": s, "tv": tv_symbol(s, "stock"), "group": "Akcie"} for s in wl_s if s not in traded])
+    day_ago = (now - timedelta(hours=24)).isoformat()
+    sigs24 = [x for x in d["scanner"] if (x.get("ts") or "") >= day_ago]
+    rejected = [x for x in sigs24 if x.get("status") == "rejected"]
+    opened = [x for x in sigs24 if x.get("status") == "executed"]
+    closed24 = [c for c in closed if (c.get("closed_ts") or "") >= day_ago]
+    news = d.get("news") or []
+    last_run = log[0] if log else None
+
+    def mk(r):
+        return "krypto" if r["scanner"] == "crypto" else "akcií"
+    pipeline = [
+        {"key": "scan", "icon": "scan", "label": "Sken", "count": sum(r["symbols"] for r in log),
+         "latest": f"{last_run['symbols']} {mk(last_run)}, {last_run['signals']} signálů" if last_run else "zatím nic"},
+        {"key": "filter", "icon": "filter", "label": "Filtr", "count": len(rejected),
+         "latest": f"{rejected[0]['symbol']}: {rejected[0].get('reject_reason') or ''}" if rejected else "nic nezamítnuto"},
+        {"key": "analyst", "icon": "brain", "label": "Analytik · FinBERT", "count": len(news),
+         "latest": (news[0]["title"] or "")[:90] + (f" ({news[0]['sentiment']:+.2f})" if news[0].get("sentiment") is not None
+                                                   else "") if news else "žádné zprávy"},
+        {"key": "entry", "icon": "entry", "label": "Vstup", "count": len(opened),
+         "latest": f"{opened[0]['symbol']} long · {opened[0].get('strategy') or ''}" if opened else "žádný nový obchod"},
+        {"key": "guard", "icon": "guard", "label": "Strážce SL/TP", "count": len(closed24),
+         "latest": (f"{closed24[0]['symbol']} {closed24[0].get('exit_reason')} "
+                    f"{(closed24[0].get('realized_pnl_usd') or 0):+.2f} $") if closed24 else "žádný SL/TP zásah"},
+    ]
+    events = [{"ts": r["ts"], "kind": "scan", "text": f"Sken {r['symbols']} {mk(r)} · {r['signals']} signálů"} for r in log[:15]]
+    events += [{"ts": x["ts"], "kind": "filter", "text": f"Filtr vyřadil {x['symbol']}: {x.get('reject_reason') or ''}"}
+               for x in rejected[:20]]
+    events += [{"ts": x["ts"], "kind": "entry", "text": f"Vstup otevřel {x['symbol']} long ({x.get('strategy')})"}
+               for x in opened[:10]]
+    events += [{"ts": c["closed_ts"], "kind": "guard" if (c.get("realized_pnl_usd") or 0) >= 0 else "loss",
+                "text": f"Strážce zavřel {c['symbol']}: {c.get('exit_reason')} {(c.get('realized_pnl_usd') or 0):+.2f} $"}
+               for c in closed[:10]]
+    events = sorted(events, key=lambda e: e["ts"] or "", reverse=True)[:40]
+
+    # live trade charts: open positions, else the last closed trade (entry / SL / TP lines; candles for stocks
+    # come from this snapshot, crypto candles are refreshed client-side from Bybit public klines)
+    charts = []
+    src = d.get("portfolio", []) or []
+    for p in src:
+        charts.append({"symbol": p["symbol"], "asset_class": p["asset_class"], "open": True, "strategy": p["strategy"],
+                       "entry": p["entry_price"], "sl": p["stop_loss"], "tp": p["take_profit"], "qty": p["quantity"],
+                       "leverage": p.get("leverage") or 1, "pnl": p.get("unrealized_pnl_usd"), "opened_ts": p["opened_ts"],
+                       "mark": p.get("current_price"),
+                       "pnl_offset": (p.get("unrealized_pnl_usd") or 0) - ((p.get("current_price") or p["entry_price"])
+                                                                            - p["entry_price"]) * p["quantity"],
+                       "candles": [[c[0], c[1], c[2], c[3], c[4]] for c in p.get("candles", [])]})
+    if not charts and closed:
+        c = closed[0]
+        cand = []
+        if live_prices and c["asset_class"] != "crypto":
+            from app.dashboard.charts import fetch_candles
+            cand = [[x[0], x[1], x[2], x[3], x[4]] for x in fetch_candles(c["symbol"], c["asset_class"])[0]]
+        charts.append({"symbol": c["symbol"], "asset_class": c["asset_class"], "open": False, "strategy": c["strategy"],
+                       "entry": c["entry_price"], "exit": c["exit_price"], "sl": c.get("initial_stop"), "tp": c.get("initial_target"),
+                       "pnl": c["realized_pnl_usd"], "closed_ts": c["closed_ts"], "exit_reason": c["exit_reason"],
+                       "opened_ts": c["opened_ts"], "candles": cand})
     return {
         "generated_ts": now.isoformat(),
+        "pipeline": pipeline,
+        "events": events,
+        "trade_charts": charts,
         "summary": {"equity": o["equity"], "start_equity": d["start_equity"], "total_pnl": o["total_pnl"],
                     "daily_pnl": o["daily_pnl"], "open_positions": o["open_positions"],
                     "max_open_positions": o["max_open_positions"], "last_scan": last_scan, "status": status,

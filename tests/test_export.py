@@ -55,7 +55,7 @@ def test_dashboard_keeps_tradingview_widget(settings, dash_db, tmp_path):
     site = export(settings, tmp_path / "s", "slug", settings.db_path, live_prices=False)
     page = (site / "index.html").read_text()
     assert "https://s3.tradingview.com/tv.js" in page and "new TradingView.widget" in page and 'id="sym"' in page
-    assert (site / "lwc.js").stat().st_size > 100_000 and "<details" in page
+    assert (site / "lwc.js").stat().st_size > 100_000 and "<details" in page and "api.bybit.com/v5/market/kline" in page
     view = json.loads((site / "data.json").read_text())
     assert any(x["tv"] == "BINANCE:BTCUSDT" for x in view["tv_symbols"])
 

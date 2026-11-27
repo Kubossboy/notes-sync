@@ -99,7 +99,7 @@ def export(settings: Settings, out: Path, slug: str, db_path=None, live_prices: 
         raise RuntimeError("dashboard template lost the TradingView widget; refusing to publish")
     d = collect(settings, db_path, live_prices=False)
     d = scrub(json.loads(json.dumps(d, default=str)))  # JSON round-trip: only plain data survives
-    view = scrub(json.loads(json.dumps(build_view(settings, db_path), default=str)))
+    view = scrub(json.loads(json.dumps(build_view(settings, db_path, live_prices=live_prices), default=str)))
     site = out / slug
     site.mkdir(parents=True, exist_ok=True)
     (site / "index.html").write_text(html)
