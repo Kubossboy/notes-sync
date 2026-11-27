@@ -42,18 +42,34 @@ def build_plan(setup: Setup, ctx: StrategyContext, settings: Settings) -> Plan:
     problems = []
     atr = val(ctx.last, "atr14") or 0.0
     risk = e - s
-    if not (s > 0 and risk > 0):
+    # D99: ATR exits for the leveraged main ledger (unlevered runs keep the strategy stops and min R:R 2)
+    atr_exits = settings.risk.exit_mode == "atr" and atr > 0 and settings.execution.paper_leverage > 1
+    if not atr_exits and not (s > 0 and risk > 0):
         problems.append("invalid stop (must be below entry)")
         risk = max(risk, 1e-12)
-    if atr and risk < 0.25 * atr:
+    if atr_exits:
+        pass  # D99: the strategy stop is replaced by an ATR stop below, so its width does not matter
+    elif atr and risk < 0.25 * atr:
         problems.append(f"stop too tight ({risk / atr:.2f} ATR < 0.25 ATR, inside noise)")
     max_stop_atr = float(getattr(settings.scanner, "max_stop_atr", 3.0) or 3.0)
-    if atr and risk > max_stop_atr * atr:
+    if not atr_exits and atr and risk > max_stop_atr * atr:
         problems.append(f"stop too wide ({risk / atr:.2f} ATR > {max_stop_atr:g} ATR)")
     target = e + setup.target_r * risk
     capped = None
-    # a tested resistance between entry and target caps the realistic target (optional; D96 scalp may disable)
-    if getattr(settings.scanner, "cap_target_by_resistance", True):
+    rk = settings.risk
+    if atr_exits:
+        # D99: ATR exits (backtest: 15m crypto 1.5 / 2.0 ATR beat the strategy stops + 100x clamp, IS and OOS)
+        s = e - rk.atr_stop_mult * atr
+        risk = e - s
+        target = e + rk.atr_target_mult * atr
+    momentum = is_momentum(ctx, settings)
+    rv = val(ctx.last, "rvol20")
+    min_rv = settings.scanner.stock_min_rvol if ctx.asset_class == AssetClass.STOCK else settings.scanner.crypto_min_rvol
+    if min_rv and (rv is None or rv < min_rv):
+        problems.append(f"rvol {0.0 if rv is None else rv:.2f} too low (needs {min_rv:g})")
+    # a tested resistance between entry and target caps the realistic target (optional; D96 scalp may disable);
+    # D99: not when the bar is a momentum breakout (price is already through recent highs on strong volume)
+    if getattr(settings.scanner, "cap_target_by_resistance", True) and not momentum:
         obstacles = sorted(L["price"] for L in ctx.levels
                            if L["touches"] >= 2 and "high" in L["kinds"] and e + 0.25 * risk < L["price"] < target)
         if obstacles:
@@ -73,6 +89,17 @@ def build_plan(setup: Setup, ctx: StrategyContext, settings: Settings) -> Plan:
         problems.append(f"net reward/risk {rr_n:.2f} < {min_rr}"
                         + (f" (target capped by resistance {capped:.4f})" if capped else ""))
     return Plan(e, s, target, risk, reward, cost, round(rr_g, 3), round(rr_n, 3), capped, problems)
+
+
+def is_momentum(ctx: StrategyContext, settings: Settings) -> bool:
+    """D99: last close above the prior N-bar high AND rvol20 >= momentum_rvol."""
+    n = settings.scanner.momentum_lookback
+    df = ctx.df
+    if len(df) < n + 1:
+        return False
+    prior = float(df["high"].iloc[-n - 1:-1].max())
+    rv = val(ctx.last, "rvol20")
+    return bool(float(df["close"].iloc[-1]) > prior and rv is not None and rv >= settings.scanner.momentum_rvol)
 
 
 def cost_bps_per_side(settings: Settings, ac: AssetClass, spread_bps: float | None = None) -> float:

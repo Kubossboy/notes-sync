@@ -14,7 +14,7 @@ from app.strategies.base import NoSetup, Setup, StrategyContext
 from app.technical.indicators import compute_all, support_resistance
 
 UTC = timezone.utc
-SET = load_settings()
+SET = load_settings(overrides={"risk": {"exit_mode": "scalp"}})   # legacy strategy-stop plans (D99 ATR exits: test_d99)
 
 
 def bars(closes, start, step=300, vols=None, session=None, spread=0.05):

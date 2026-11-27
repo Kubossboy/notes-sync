@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import math
+import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
@@ -174,6 +175,15 @@ class NewsEngine:
                 story = r["story_id"] or r["id"]
                 break
         tickers = "," + ",".join(sorted(ev.tags)) + "," if ev.tags else ""
+        try:
+            return self._store_new(ev, story, tickers, recent, now)
+        except sqlite3.IntegrityError as e:
+            # another ingest (overlapping run) stored the same headline between the check and the insert
+            if "content_hash" in str(e):
+                return None
+            raise
+
+    def _store_new(self, ev: Event, story, tickers: str, recent: list[dict], now: datetime) -> int | None:
         with self.db.transaction():
             nid = self.db.insert("news_events", {
                 "fetched_ts": now.isoformat(), "published_ts": ev.published.isoformat() if ev.published else None,

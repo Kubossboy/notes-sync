@@ -109,6 +109,10 @@ class RiskSection(_Strict):
     lev_min_reward_risk: float = Field(1.2, ge=1.0)                   # default 1.2; D97 paper-scalp overlay may set 1.0
     lev_tp_atr: float = Field(1.25, gt=0, le=1.5)                     # TP <= fill + 1.25 x ATR14(15m)
     lev_sl_liq_fraction: float = Field(0.6, gt=0, le=0.8)             # SL at most 60 % of the way to liquidation
+    # D99: exits from ATR (scan timeframe), leverage adapts so the SL stays <= lev_sl_liq_fraction of liquidation
+    exit_mode: Literal["atr", "scalp"] = "atr"                        # "scalp" = old D94 100x clamp (SL ~0.3 %)
+    atr_stop_mult: float = Field(1.5, gt=0, le=5)
+    atr_target_mult: float = Field(2.0, gt=0, le=10)
 
 
 class Weights(_Strict):
@@ -201,6 +205,11 @@ class ScannerSection(_Strict):
     crypto_strategies: dict[str, StrategyToggle] = {}
     cap_target_by_resistance: bool = True   # D96: scalp overlay may disable; nearby resistance was collapsing net R:R
     max_stop_atr: float = Field(3.0, gt=0, le=10)  # reject a setup whose stop is wider than this many ATR
+    # D99: resistance caps the target unless the bar is a momentum breakout (close > prior N-bar high, rvol >= x)
+    momentum_lookback: int = Field(20, ge=2)
+    momentum_rvol: float = Field(1.5, ge=0)
+    stock_min_rvol: float = Field(1.2, ge=0)        # D99: stocks need volume confirmation (rvol20)
+    crypto_min_rvol: float = Field(0.0, ge=0)
 
 
 class NewsSection(_Strict):

@@ -9,7 +9,7 @@ from __future__ import annotations
 from app.risk.leverage import risk_pct
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -168,8 +168,10 @@ def collect(settings: Settings, db_path: Path | str | None = None, now: datetime
             "integrations": health, "failed_integrations": [h for h in health if h["status"] != "ok"],
             "last_market_data": last_obs, "last_news_ingest": last_news, "last_scans": last_scans,
             "missing_data": missing,
+            # D99: only ACTIVE errors - unresolved and from the last 24 h (fixed / old ones stay in the table)
             "recent_errors": _rows(db, "SELECT ts, module, error_type, substr(message,1,200) AS message FROM errors "
-                                       "ORDER BY id DESC LIMIT 10"),
+                                       "WHERE COALESCE(resolved, 0) = 0 AND ts >= ? ORDER BY id DESC LIMIT 10",
+                                   ((datetime.now(timezone.utc) - timedelta(hours=24)).isoformat(),)),
             "active_modules": {"market_data": True, "scanner": True, "news": v.news.enabled,
                                "validation": v.validation.enabled, "risk_engine": True,
                                "paper_simulator": v.execution.provider == "internal_sim",

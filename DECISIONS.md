@@ -300,3 +300,43 @@ The overnight NVDA/QQQ paper positions were closed by `manage_position` catch-up
 - D98 addendum: quote-level problems (invalid / crossed / divergent / missing quote) on non-core symbols no longer
   halt; the trader refuses to trade a divergent quote instead. After the 27.11 US early close an empty Alpaca quote
   for RIOT had halted everything. `ops/resume.txt` + `scripts/apply_resume.py` give CI a one-shot, idempotent resume.
+
+
+## D99 — evidence-based filter/exit tuning + dashboard error fixes (2026-11-27)
+
+Evidence (scripts/research/outcomes.py on the live DB, 24.–27.11, 168 signals with known outcome; and
+scripts/research/tune.py + sweep.py, 60 days of free history: 40 crypto pairs on Coinbase 15m, 8 core stocks on
+Alpaca 5m; live CostModel + Bybit/Alpaca fees, stop-first, portfolio max 2 open; in-sample 27.9.–7.11., holdout
+7.11.–27.11.):
+- The D94 100x scalp clamp put the stop at <= ~0.3 % of price, inside normal 15m noise, and the ~0.17 % crypto
+  round-trip cost was a large share of each R. Replaying the live pipeline: 2,286 trades IS, win 19.5 %, -0.41 R
+  per trade after fees; holdout 1,048 trades, win 18 %, -0.46 R.
+- Crypto trend_continuation was the biggest loser in every variant (live: 12.5 % win; backtest -0.39 R / -0.40 R
+  with ATR exits). Crypto orderbook_imbalance (not backtestable; live: 30 signals, 26.7 % win, -0.28 R) too.
+- Rejections for "net R:R too low" WITHOUT a resistance cap would have won (+0.30 R, 65 %); capped ones lost
+  (-0.18 R). The resistance cap is right in general but wrong on momentum breakouts.
+- 1h/4h trend filters and RSI 45–70 did not hold up out of sample (fewer trades, worse holdout) - not adopted.
+
+Changes (main leveraged ledger only; unlevered/shadow/backtest keep strategy stops):
+- `risk.exit_mode: atr`: SL = entry - 1.5 x ATR14, TP = entry + 2.0 x ATR14 (scan timeframe), re-based on the fill.
+- Leverage adapts per trade (<= 100x) so the SL stays within 60 % of the liquidation distance; $ risk per trade is
+  unchanged (sizing by stop distance), only margin differs.
+- Resistance still caps the target unless the bar is a momentum breakout (close > prior 20-bar high, rvol >= 1.5).
+- Stocks need rvol20 >= 1.2. Crypto trend_continuation + orderbook_imbalance disabled.
+- Candidates are executed best net R:R first (expected value), then by score.
+- Min net R:R stays 1.2 after real fees (1.5/2.0 ATR = 1.33 gross; the 1.2 floor drops trades where costs eat it).
+
+Result (R per trade after fees): crypto IS 63 trades, 51 % win, +0.13 R, max DD 11 R; holdout 26 trades, 58 %,
++0.28 R, DD 3 R. Stocks improve (-0.48 -> -0.06 R IS, -0.29 -> -0.16 R holdout) but stay negative: no stock
+variant was positive in the 60-day sample, so stocks remain on watch (candidate for shadow-only if live keeps losing).
+Small samples - not a guarantee.
+
+Dashboard errors (root causes):
+- "alpaca: empty quote (bid/ask 0)": stock quotes requested right after the 13:00 ET early close, when Alpaca's IEX
+  book is empty. Now an empty book is `EmptyBook` (that source just has no quote: info event, no error, no halt), and
+  stock entries are refused before quoting when the regular session is closed.
+- "UNIQUE constraint failed: news_events.content_hash": two overlapping ingests stored the same headline between the
+  check and the insert. The insert now treats that as "already stored".
+- "no column named is_complete": a local run of an older build against the renamed column (code uses
+  `is_complete_candle`); nothing left to fix in code.
+- Migration 0012 marks these as resolved; the dashboard shows only unresolved errors from the last 24 h.

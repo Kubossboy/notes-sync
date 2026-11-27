@@ -115,10 +115,20 @@ class PaperTrader:
         qm = ",".join("?" * len(run_ids))
         return self.db.conn.execute(
             f"SELECT s.*, sc.total_score FROM signals s JOIN signal_scores sc ON sc.signal_id = s.id "
-            f"WHERE s.scan_run_id IN ({qm}) AND s.status = 'new' ORDER BY sc.total_score DESC", run_ids).fetchall()
+            f"WHERE s.scan_run_id IN ({qm}) AND s.status = 'new' "
+            f"ORDER BY s.reward_risk DESC, sc.total_score DESC", run_ids).fetchall()
 
     def execute_signal(self, row, now: datetime) -> dict:
         p = Proposal.from_signal_row(row)
+        if p.asset_class == AssetClass.STOCK:
+            from app.data.calendar import regular_session_open
+            if not regular_session_open(now):
+                # D99: a stock signal from a scan that started before the close: don't even ask for a quote
+                # (right after the close Alpaca's book is empty, which used to show up as data errors)
+                self.db.insert("strategy_decisions", {"ts": now.isoformat(), "signal_id": p.signal_id,
+                                                      "decision": "reject", "reason": "risk: market closed"})
+                return {"signal_id": p.signal_id, "symbol": p.symbol, "strategy": p.strategy, "approved": False,
+                        "reason": "market closed", "qty": 0, "planned_risk_usd": 0, "rr_net": None}
         try:
             q = self.quote(p.symbol, now)
         except Exception as e:
@@ -134,7 +144,11 @@ class PaperTrader:
             except Exception:
                 a15 = None
             fill = self.sim.costs.buy_fill(p.asset_class, q.price, q.bid, q.ask).price
-            if p.stop < fill < p.target:
+            if self.s.risk.exit_mode == "atr":           # D99: ATR distances from the fill, adaptive leverage
+                st_, tg_, L_ = LV.atr_levels(self.s, fill, p.entry, p.stop, p.target)
+                if st_ < fill < tg_:
+                    p = dataclasses.replace(p, stop=st_, target=tg_, leverage=L_)
+            elif p.stop < fill < p.target:
                 st_, tg_ = LV.scalp_levels(self.s, fill, p.stop, p.target, a15)
                 p = dataclasses.replace(p, stop=st_, target=tg_, leverage=LV.lev(self.s))
         d = self.risk.evaluate(p, q, now)

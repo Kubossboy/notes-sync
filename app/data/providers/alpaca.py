@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from app.config import Secrets
 from app.data.calendar import session_at
 from app.data.models import AssetClass, Candle, Quote, tf_seconds
-from app.data.providers.base import BaseProvider, DataFormatError, SymbolNotSupported, fnum
+from app.data.providers.base import BaseProvider, DataFormatError, EmptyBook, SymbolNotSupported, fnum
 from app.data.providers.crypto import parse_iso_utc
 
 
@@ -76,6 +76,6 @@ class AlpacaDataProvider(BaseProvider):
             raise DataFormatError("alpaca: missing 'quote'")
         bid, ask = fnum(q.get("bp"), "bp", self.name), fnum(q.get("ap"), "ap", self.name)
         if bid <= 0 or ask <= 0:
-            raise DataFormatError("alpaca: empty quote (bid/ask 0)")
+            raise EmptyBook("alpaca: empty quote (bid/ask 0)")
         return Quote(symbol.upper(), AssetClass.STOCK, self.name, (bid + ask) / 2,
                      parse_iso_utc(q.get("t")), bid=bid, ask=ask)

@@ -23,7 +23,7 @@ from app.data.crosscheck import CrossCheck, cross_check
 from app.data.models import AssetClass, Candle, CandleSeries, DataStatus, Quote, utc
 from app.config import Secrets
 from app.data.providers.alpaca import AlpacaCredentialsMissing, AlpacaDataProvider
-from app.data.providers.base import BaseProvider, DataFormatError, ProviderError, SymbolNotSupported
+from app.data.providers.base import BaseProvider, DataFormatError, EmptyBook, ProviderError, SymbolNotSupported
 from app.data.providers.crypto import BinanceProvider, CoinbaseProvider, KrakenProvider
 from app.data.providers.yahoo import YahooProvider
 from app.data.validation import (as_of_lagged_behind_clock, as_utc, effective_as_of,
@@ -209,6 +209,10 @@ class MarketDataEngine:
         for name in self.sources_for(ac):
             try:
                 q = self.providers[name].fetch_quote(symbol)
+            except EmptyBook as e:          # no bid/ask at that source right now: skip it, not an error / no halt
+                attempts.append(SourceAttempt(name, False, str(e), "unavailable"))
+                self.db.log_event("quote_empty", f"data.{name}", f"{symbol}: {e}", "info")
+                continue
             except DataFormatError as e:
                 attempts.append(SourceAttempt(name, False, str(e), "invalid"))
                 self.db.log_error(f"data.{name}", e)

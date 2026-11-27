@@ -72,7 +72,7 @@ def test_incomplete_when_costs_allow_but_modules_missing(tmp_path, db, monkeypat
     sc, _ = make(s, db, monkeypatch)
     rep = sc.run(AssetClass.CRYPTO, ["BTC-USD"], "live", now=NOW)
     sig = next(x for x in rep["symbols"][0]["signals"] if x["strategy"] == "momentum_breakout")
-    assert sig["status"] == "incomplete" and sig["rr_net"] >= 2, sig
+    assert sig["status"] == "incomplete" and sig["rr_net"] >= s.risk.lev_min_reward_risk, sig   # D99 ATR exits (100x)
     assert sig["score"] < 60        # cannot reach a tradable score without news/sentiment/quant
 
 

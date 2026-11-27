@@ -4,7 +4,7 @@ from app.config import Secrets
 from app.core.safety import SafeState
 from app.data.engine import MarketDataEngine
 from app.data.providers.alpaca import AlpacaCredentialsMissing, AlpacaDataProvider
-from app.data.providers.base import DataFormatError
+from app.data.providers.base import DataFormatError, EmptyBook
 from tests.fakes import FakeResp, SeqSession
 
 SEC = Secrets(alpaca_api_key_id="PKTEST", alpaca_api_secret_key="SKTEST")
@@ -51,7 +51,7 @@ def test_quote_and_bad_payloads():
     q = p.fetch_quote("AAPL")
     assert q.price == pytest.approx(10.01) and q.source_ts is not None
     p = AlpacaDataProvider(SEC, session=SeqSession(FakeResp(200, {"quote": {"bp": 0, "ap": 0}})))
-    with pytest.raises(DataFormatError):
+    with pytest.raises(EmptyBook):          # D99: empty book = no quote from this source, not bad data
         p.fetch_quote("AAPL")
     p = AlpacaDataProvider(SEC, session=SeqSession(FakeResp(200, {"oops": 1})))
     with pytest.raises(DataFormatError):

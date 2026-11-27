@@ -23,6 +23,11 @@ class DataFormatError(ProviderError):
     """Source answered but the payload is malformed -> data integrity problem."""
 
 
+class EmptyBook(ProviderError):
+    """Source answered correctly but has no bid/ask right now (e.g. Alpaca IEX right after the close).
+    Not a data-integrity problem: that source simply has no quote; other sources still count."""
+
+
 class SymbolNotSupported(ProviderError):
     pass
 

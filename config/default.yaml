@@ -116,9 +116,9 @@ scanner:
   crypto_strategies:
     momentum_breakout:      {enabled: true, params: {donchian: 48, min_roc: 0.4, min_rvol: 2.0, rsi_max: 82}}
     volume_expansion:       {enabled: true, params: {min_rvol: 2.5, bars: 2}}
-    orderbook_imbalance:    {enabled: true, params: {min_imbalance: 0.3, depth_pct: 0.5}}
+    orderbook_imbalance:    {enabled: false, params: {min_imbalance: 0.3, depth_pct: 0.5}}
     volatility_expansion:   {enabled: true, params: {squeeze_pctile: 20, squeeze_lookback: 100}}
-    trend_continuation:     {enabled: true, params: {pullback_bars: 4, rsi_min: 40, rsi_max: 68}}
+    trend_continuation:     {enabled: false, params: {pullback_bars: 4, rsi_min: 40, rsi_max: 68}}
     sr_breakout:            {enabled: true, params: {min_touches: 2, min_rvol: 1.5}}
     liquidity_change:       {enabled: true, params: {min_history: 5, ask_drop_pct: 50, max_bid_drop_pct: 20}}
 
