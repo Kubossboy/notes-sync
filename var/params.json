@@ -1,0 +1,38 @@
+{
+ "version": 1,
+ "params": {
+  "swing.atr_mult": 1.5
+ },
+ "history": [
+  {
+   "version": 1,
+   "ts": "2026-11-27T22:44:45.496095+00:00",
+   "kind": "param_change",
+   "key": "swing.atr_mult",
+   "group": "rsi2_swing",
+   "old": 2.0,
+   "new": 1.5,
+   "reason": "it did better out-of-sample after costs (+0.334 R vs +0.229 R per trade over 48 trades)",
+   "evidence": {
+    "oos": {
+     "n": 48,
+     "avg_r": 0.3335,
+     "win": 0.792
+    },
+    "oos_current": {
+     "n": 46,
+     "avg_r": 0.2291,
+     "win": 0.804
+    }
+   }
+  }
+ ],
+ "last_run": {
+  "ts": "2026-11-27T22:44:45.496095+00:00",
+  "summary": {
+   "rsi2_swing": "changed",
+   "crypto": "no neighbour beat the current values in-sample"
+  },
+  "reverts": 0
+ }
+}
