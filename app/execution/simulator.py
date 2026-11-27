@@ -44,14 +44,15 @@ class PaperSimulator:
         fill = self.costs.buy_fill(ac, q.price, q.bid, q.ask)
         qty = d.quantity
         notional = qty * fill.price
-        fee = self.costs.fee(notional, ac)
+        mk = self.costs.maker_entry(ac)
+        fee = self.costs.fee(notional, ac, mk)
         coid = f"atlas-entry-sig{p.signal_id}" if p.signal_id is not None else f"atlas-entry-{d.evaluation_id}"
         ts = now.isoformat()
         try:
             with self.db.transaction():
                 oid = self.db.insert("order_requests", {
                     "ts": ts, "client_order_id": coid, "signal_id": p.signal_id, "symbol": p.symbol,
-                    "asset_class": ac.value, "side": "buy", "order_type": "market", "quantity": qty,
+                    "asset_class": ac.value, "side": "buy", "order_type": "limit" if mk else "market", "quantity": qty,
                     "stop_loss": p.stop, "take_profit": p.target, "position_size_usd": notional,
                     "planned_risk_usd": d.planned_risk_usd, "execution_mode": "paper", "provider": PROVIDER,
                     "status": "submitted", "purpose": "entry", "evaluation_id": d.evaluation_id,
@@ -59,7 +60,7 @@ class PaperSimulator:
                 self.db.insert("simulated_fills", {
                     "ts": ts, "order_id": oid, "fill_price": fill.price, "quantity": qty, "fee_usd": fee,
                     "slippage_usd": fill.slippage_per_unit * qty, "reference_price": fill.reference,
-                    "assumptions": fill.assumption + f"; fee {self.costs.fee_bps(ac)}bps"})
+                    "assumptions": fill.assumption + f"; fee {self.costs.fee_bps(ac, mk)}bps"})
                 pid = self.db.insert("positions", {
                     "opened_ts": ts, "symbol": p.symbol, "asset_class": ac.value, "strategy": p.strategy,
                     "direction": "long", "quantity": qty, "entry_price": fill.price, "stop_loss": p.stop,
@@ -92,7 +93,8 @@ class PaperSimulator:
     def close_position(self, pos: dict, fill: Fill, reason: str, now: datetime) -> dict:
         ac = AssetClass(pos["asset_class"])
         qty = pos["quantity"]
-        fee = self.costs.fee(qty * fill.price, ac)
+        mk = reason == "take_profit" and self.costs.maker_entry(ac)     # D101: TP limit = maker, rest taker
+        fee = self.costs.fee(qty * fill.price, ac, mk)
         coid = f"atlas-exit-pos{pos['id']}"
         ts = now.isoformat()
         with self.db.transaction():

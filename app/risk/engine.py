@@ -43,10 +43,13 @@ def size_position(costs: CostModel, settings: Settings, ac: AssetClass, fill_pri
     """Pure sizing function shared by the live risk engine and the backtester.
     Loss at the stop includes entry fee, stop slippage and exit fee; gain at target includes both fees."""
     r, ex = settings.risk, settings.execution
+    mk = costs.maker_entry(ac)                       # D101: maker entry + maker TP, taker stop
     fee_b = costs.fee_bps(ac) / 1e4
+    fee_m = costs.fee_bps(ac, maker=mk) / 1e4
     stop_exit = stop * (1 - costs.slip(ac))
-    per_unit_loss = (fill_price - stop_exit) + fill_price * fee_b + stop_exit * fee_b
-    per_unit_gain = (target - fill_price) - fill_price * fee_b - target * fee_b
+    tgt_exit = target * (1 - costs.maker_slip()) if mk else target
+    per_unit_loss = (fill_price - stop_exit) + fill_price * fee_m + stop_exit * fee_b
+    per_unit_gain = (tgt_exit - fill_price) - fill_price * fee_m - tgt_exit * fee_m
     budget = equity * (r.max_risk_per_trade_pct if risk_pct is None else risk_pct) / 100
     comm = 2 * ex.commission_per_trade_usd
     eff_budget = max(0.0, min(budget, remaining_day) - comm)
@@ -56,7 +59,7 @@ def size_position(costs: CostModel, settings: Settings, ac: AssetClass, fill_pri
     qty = costs.round_qty(min(qty_risk, qty_pos, qty_cash), ac)
     notional = qty * fill_price
     planned = qty * per_unit_loss + comm
-    fees = costs.fee(notional, ac) + costs.fee(qty * target, ac)
+    fees = costs.fee(notional, ac, mk) + costs.fee(qty * target, ac, mk)
     rr = (qty * per_unit_gain - comm) / planned if planned > 0 else None
     return Sizing(qty, notional, planned, budget, fees, rr, per_unit_loss, per_unit_gain)
 

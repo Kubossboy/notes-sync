@@ -114,6 +114,8 @@ th{color:var(--mut);font-weight:600;font-size:11.5px}td.r{white-space:normal;min
   <div class="stat"><div class="k">Watching</div><div class="v" id="s-uni">–</div><div class="s" id="s-uni-s"></div></div>
 </div>
 
+<section class="card"><h2>Market mood <span class="k">decides which strategies may trade</span></h2><div id="regime"></div></section>
+
 <section class="card"><h2><span id="tc-title">Live trade</span><span class="tag" id="tc-tag">LIVE</span></h2><div id="tcs"></div></section>
 
 <section class="card"><h2>How the bot decides <span class="k">last 24 h · tap a step</span></h2><div id="pipe"></div></section>
@@ -234,6 +236,7 @@ function render(d){
  $("n-res").textContent=d.scan_results.length;
  $("t-res").innerHTML=`<div class="legend2"><b>RSI</b> (0–100) shows how hard the price has been pushed: above 70 = overheated, below 30 = oversold, around 50 = calm. <b>Trend</b> = the direction of the price over recent hours (Rising, Falling or Sideways).</div>`+
   (d.scan_results.length?`<div class="cards2">${d.scan_results.map(r=>symCard(r,d.best_near&&r.symbol===d.best_near.symbol&&r.result==="Rejected")).join("")}</div>`:empty("No checks in the last 24 h."));
+ $("regime").innerHTML=(d.regime||[]).map(r=>`<div class="ic2"><div class="top"><div><div class="sym">${esc(r.market)}${r.benchmark?` <span class="mut">(${esc(r.benchmark)})</span>`:""}</div><div class="meta">${esc(r.allowed||"")}</div></div><span class="badge ${r.tone}">${esc(r.text||"")}</span></div></div>`).join("")||empty("Not measured yet.");
  $("n-err").textContent=d.errors.length;
  $("t-err").innerHTML=d.errors.length?`<div class="cards2">${d.errors.map(r=>`<div class="ic2"><div class="meta">${tm(r.ts)} · ${esc(r.where)}</div><div class="why">${esc(r.text)}</div></div>`).join("")}</div>`:empty("No errors. All good.");
  $("gen").textContent="updated "+tm(d.generated_ts)+" (Prague time)";

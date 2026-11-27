@@ -3,7 +3,7 @@ manage open positions -> (if trading allowed) scan -> risk-evaluate complete sig
 -> simulate fills -> journal -> equity snapshot. Kill switch included."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.config import Settings
 from app.core.logging_setup import get_logger
@@ -118,6 +118,47 @@ class PaperTrader:
             f"WHERE s.scan_run_id IN ({qm}) AND s.status = 'new' "
             f"ORDER BY s.reward_risk DESC, sc.total_score DESC", run_ids).fetchall()
 
+    PENDING_KEY = "pending_limit_entries"
+
+    def _limit_gate(self, p, q, now: datetime) -> str | None:
+        """D101 maker entry: the first sighting places a post-only limit at the current bid; it only fills if a later
+        quote trades at or below it before the TTL, otherwise no trade. Returns a reason while not filled."""
+        pend = self.db.get_state(self.PENDING_KEY, {}) or {}
+        cutoff = (now - timedelta(days=1)).isoformat()
+        pend = {k: v for k, v in pend.items() if v["placed"] >= cutoff}
+        key = str(p.signal_id)
+        cur = pend.get(key)
+        if cur is None:
+            lim = q.bid if q.bid else q.price
+            pend[key] = {"symbol": p.symbol, "limit": lim, "placed": now.isoformat(),
+                         "expires": (now + timedelta(minutes=self.s.execution.crypto_limit_ttl_minutes)).isoformat()}
+            self.db.set_state(self.PENDING_KEY, pend)
+            self.db.log_event("limit_placed", "execution", f"{p.symbol} post-only buy limit {lim:.6g} (maker)")
+            return "limit order placed at the bid, waiting for a fill"
+        if cur.get("done"):
+            return "limit order already handled"
+        if now.isoformat() > cur["expires"]:
+            cur["done"] = "expired"
+            self.db.set_state(self.PENDING_KEY, pend)
+            self.db.log_event("limit_expired", "execution", f"{p.symbol} limit {cur['limit']:.6g} not filled")
+            return "limit order not filled in time (price never came back down)"
+        if q.price > cur["limit"]:
+            return "limit order waiting (price above the limit)"
+        cur["done"] = "filled"
+        self.db.set_state(self.PENDING_KEY, pend)
+        return None
+
+    def pending_signals(self, now: datetime) -> list:
+        """Signals with a live (unexpired, unfilled) entry limit from an earlier cycle."""
+        pend = self.db.get_state(self.PENDING_KEY, {}) or {}
+        ids = [int(k) for k, v in pend.items() if not v.get("done") and v["expires"] >= now.isoformat()]
+        if not ids:
+            return []
+        qm = ",".join("?" * len(ids))
+        return self.db.conn.execute(
+            f"SELECT s.*, sc.total_score FROM signals s JOIN signal_scores sc ON sc.signal_id = s.id "
+            f"WHERE s.id IN ({qm}) AND s.status = 'new' ORDER BY s.reward_risk DESC", ids).fetchall()
+
     def execute_signal(self, row, now: datetime) -> dict:
         p = Proposal.from_signal_row(row)
         if p.asset_class == AssetClass.STOCK:
@@ -134,6 +175,11 @@ class PaperTrader:
         except Exception as e:
             self.db.log_error("execution.quote", e)
             q = None
+        if q is not None and self.sim.costs.maker_entry(p.asset_class):
+            wait = self._limit_gate(p, q, now)       # D101: post-only limit at the bid must actually get hit
+            if wait:
+                return {"signal_id": p.signal_id, "symbol": p.symbol, "strategy": p.strategy, "approved": False,
+                        "reason": wait, "qty": 0, "planned_risk_usd": 0, "rr_net": None}
         from app.risk import leverage as LV
         if LV.lev(self.s) > 1 and q is not None and p.stop and p.target and p.entry:   # D94 scalp levels
             import dataclasses
@@ -185,6 +231,10 @@ class PaperTrader:
                 syms = self.scan_batch(ac, now)
                 if not syms:
                     report["scans"].append({"scanner": ac.value, "skipped": "US market closed"})
+                    try:                        # D100: keep the dashboard's market mood current while closed
+                        self.scanner._current_regime(ac, now)
+                    except Exception as e:
+                        self.db.log_error("regime", e)
                     continue
                 rep = self.scanner.run(ac, symbols=syms, mode="live")
                 run_ids.append(rep["run_id"])
@@ -192,7 +242,11 @@ class PaperTrader:
                                         "symbols": len(syms)})
             # shadow ledger first (every strategy, separate ledger; never affects the portfolio / risk / Alpaca)
             report["shadow"]["opened"] = self._shadow(lambda: self.shadow.open_from_signals(run_ids, self.quote, now))
-            for row in self.candidates(run_ids):
+            seen = set()
+            for row in list(self.pending_signals(now)) + list(self.candidates(run_ids)):
+                if row["id"] in seen:
+                    continue
+                seen.add(row["id"])
                 if not self.safe.trading_allowed():
                     break
                 report["executions"].append(self.execute_signal(row, now))

@@ -28,7 +28,8 @@ def test_every_known_code_is_translated():
              "price below EMA20/VWAP", "close not above upper band", "bar not bullish", "last bar not bullish",
              "close not above opening-range high", "breakout not fresh (previous bar already above)",
              "close at 40% of bar range", "ROC12 0.1% too low", "EMA 9/20/50 not stacked bullish", "price not rising",
-             "ATR not expanding", "RSI 88 outside range", "score 55 < 70"]
+             "ATR not expanding", "RSI 88 outside range", "score 55 < 70",
+             "depth within 0.5% 3,438 USD < 50,000", "spread 14.3 bps > 10.0", "rvol 1.05 too low (needs 1.2)"]
     for c in codes:
         out = explain(c)
         assert out != c and not re.search(r"[a-z]+_[a-z]+", out), (c, out)

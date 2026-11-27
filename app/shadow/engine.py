@@ -80,7 +80,7 @@ class ShadowEngine:
             if fill.price <= r["stop_loss"]:
                 continue
             qty = self._risk_budget() / (fill.price - r["stop_loss"])
-            fee = self.costs.fee(qty * fill.price, ac)
+            fee = self.costs.fee(qty * fill.price, ac, self.costs.maker_entry(ac))
             self.db.insert("shadow_positions", {
                 "opened_ts": now.isoformat(), "signal_id": r["id"], "symbol": r["symbol"], "asset_class": ac.value,
                 "strategy": r["strategy"], "timeframe": r["timeframe"], "validation_status": r["validation_status"],
@@ -148,7 +148,7 @@ class ShadowEngine:
 
     def _close(self, pos: dict, px: float, reason: str, now: datetime) -> dict:
         ac = AssetClass(pos["asset_class"])
-        exit_fee = self.costs.fee(pos["quantity"] * px, ac)
+        exit_fee = self.costs.fee(pos["quantity"] * px, ac, reason == "take_profit" and self.costs.maker_entry(ac))
         fees = pos["entry_fee_usd"] + exit_fee
         pnl = (px - pos["entry_price"]) * pos["quantity"] - fees
         r = pnl / pos["planned_risk_usd"]

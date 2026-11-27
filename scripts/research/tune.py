@@ -55,7 +55,7 @@ def _htf(ind: pd.DataFrame, rule: str, bar: pd.Timedelta) -> pd.Series:
 
 def load_raw(sym: str, ac: str, days: int) -> pd.DataFrame | None:
     if ac == "crypto":
-        f = CACHE / f"coinbase_{sym}_15m_60d.csv.gz"
+        f = CACHE / f"coinbase_{sym}_15m_{730 if days > 60 else 60}d.csv.gz"
     else:
         f = CACHE / f"alpaca_{sym}_5m_365d.csv.gz"
     if not f.exists():
@@ -133,6 +133,8 @@ class Policy:
     rsi: tuple | None = None
     strategies: frozenset | None = None
     min_rvol_stock: float = 0.0
+    gate: str = "same"           # "taker": R:R gate keeps the conservative all-taker costs even with maker fees
+    fees: str = "taker"          # taker = old model (all market orders); maker = D101 limit entry/TP, market SL
 
 
 def levels_for(c: dict, p: Policy, fill: float) -> tuple[float, float] | None:
@@ -176,6 +178,17 @@ def net_rr(fill, stop, tgt, ac) -> float:
     return win / loss if loss > 0 else -9
 
 
+MK = {"maker": 2.0, "slip_m": 1.0}     # Bybit non-VIP perps maker 0.02 %, ~1 bp on maker fills
+
+
+def net_rr_maker(fill, stop, tgt) -> float:
+    taker = S.execution.crypto_fee_bps / 1e4
+    slip = S.execution.slippage_bps_crypto / 1e4
+    win = tgt * (1 - MK["slip_m"] / 1e4) - fill - MK["maker"] / 1e4 * (fill + tgt)
+    loss = fill - stop * (1 - slip) + MK["maker"] / 1e4 * fill + taker * stop
+    return win / loss if loss > 0 else -9
+
+
 def passes(c: dict, p: Policy) -> bool:
     if p.strategies is not None and f"{c['ac']}:{c['strategy']}" not in p.strategies:
         return False
@@ -201,15 +214,27 @@ def trade(c: dict, p: Policy, days: int) -> dict | None:
         return None
     o, h, l, cl = (df[k].to_numpy() for k in ("open", "high", "low", "close"))
     idx = df.index
-    fill = CM.buy_fill(acE, float(o[j])).price
+    maker = p.fees == "maker" and ac == "crypto"
+    if maker:
+        # D101: post-only limit buy at the signal close; fills only if the next bar trades THROUGH it
+        lim = float(cl[c["i"]])
+        if not (l[j] < lim):
+            return None
+        fill = lim * (1 + MK["slip_m"] / 1e4)
+    else:
+        fill = CM.buy_fill(acE, float(o[j])).price
     lv = levels_for(c, p, fill)
     if lv is None:
         return None
     stop, tgt = lv
-    if not (stop < fill < tgt) or net_rr(fill, stop, tgt, ac) < p.min_rr:
+    rr0 = net_rr_maker(fill, stop, tgt) if maker else net_rr(fill, stop, tgt, ac)
+    rr_gate = net_rr(fill, stop, tgt, ac) if p.gate == "taker" else rr0
+    if not (stop < fill < tgt) or rr_gate < p.min_rr:
         return None
     fee = (S.execution.crypto_fee_bps if ac == "crypto" else S.execution.stock_fee_bps) / 1e4
-    unit = fill - stop * (1 - CM.slip(acE)) + fee * (fill + stop)
+    fe = MK["maker"] / 1e4 if maker else fee                       # entry fee
+    unit = fill - stop * (1 - CM.slip(acE)) + fe * fill + fee * stop
+    fx = fee
     t0 = idx[j]
     day = t0.tz_convert(ET).date()
     k, ex, why = j, None, None
@@ -222,6 +247,8 @@ def trade(c: dict, p: Policy, days: int) -> dict | None:
             break
         if h[k] > tgt:
             ex, why = CM.target_fill(acE, tgt, float(o[k])).price, "tp"
+            if maker:
+                ex, fx = ex * (1 - MK["slip_m"] / 1e4), MK["maker"] / 1e4
             break
         if ac == "crypto" and idx[k] - t0 >= pd.Timedelta(hours=S.risk.crypto_max_hold_hours):
             ex, why = CM.sell_fill(acE, float(cl[k])).price, "time"
@@ -229,9 +256,9 @@ def trade(c: dict, p: Policy, days: int) -> dict | None:
         k += 1
     if ex is None:
         return None
-    r = (ex - fill - fee * (fill + ex)) / unit
+    r = (ex - fill - fe * fill - fx * ex) / unit
     return {"sym": c["sym"], "ac": ac, "strategy": c["strategy"], "entry_ts": t0, "exit_ts": idx[min(k, len(df) - 1)],
-            "r": r, "why": why, "rr": net_rr(fill, stop, tgt, ac), "sl_pct": (fill - stop) / fill * 100}
+            "r": r, "why": why, "rr": rr0, "sl_pct": (fill - stop) / fill * 100}
 
 
 def portfolio(trades: list[dict], max_open: int = 2) -> list[dict]:

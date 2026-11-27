@@ -59,7 +59,12 @@ class ExecutionSection(_Strict):
     commission_per_trade_usd: float = Field(0.0, ge=0)
     stock_fee_bps: float = Field(0.0, ge=0)
     crypto_fee_bps: float = Field(5.5, ge=0)   # Bybit USDT-perp taker; yaml may override
-    slippage_bps_stock: float = Field(5.0, ge=0)
+    # D101: entries and take-profits as post-only limit (maker) orders, stop-loss / time / manual exits taker
+    crypto_entry_order: Literal["limit", "market"] = "limit"
+    crypto_maker_fee_bps: float = Field(2.0, ge=0)
+    slippage_bps_crypto_maker: float = Field(1.0, ge=0)
+    crypto_limit_ttl_minutes: float = Field(15, gt=0)    # an unfilled entry limit is cancelled after this
+    slippage_bps_stock: float = Field(3.0, ge=0)
     slippage_bps_crypto: float = Field(3.0, ge=0)
     # --- paper simulator (milestone 5)
     fractional_stocks: bool = True                  # fractional shares (Alpaca supports them); False -> whole shares
@@ -310,6 +315,16 @@ _ENV_TO_SECRET = {
 }
 
 
+class RegimeSection(_Strict):
+    """D100 market regime (daily SPY / BTC-USD) and the regime x strategy matrix from the backtest."""
+    enabled: bool = True
+    stock_benchmark: str = "SPY"
+    crypto_benchmark: str = "BTC-USD"
+    # asset -> strategy -> allowed "trend/vol" cells; a strategy not listed is not regime-gated
+    matrix: dict[str, dict[str, list[str]]] = {}
+    stock_watch_only: bool = False    # stocks: scan + log signals, never open paper entries
+
+
 class Settings(_Strict):
     app: AppSection = AppSection()
     paths: PathsSection = PathsSection()
@@ -323,6 +338,7 @@ class Settings(_Strict):
     news: NewsSection = NewsSection()
     validation: ValidationSection = ValidationSection()
     http: HttpSection = HttpSection()
+    regime: RegimeSection = RegimeSection()
 
     def config_hash(self) -> str:
         blob = json.dumps(self.model_dump(mode="json"), sort_keys=True).encode()

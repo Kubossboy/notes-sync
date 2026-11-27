@@ -102,6 +102,27 @@ def _cycles(runs: list[dict], executed_by_run: dict, ctx: _Ctx, limit: int = 10)
     return out
 
 
+def regime_view(settings: Settings, regs: dict) -> list[dict]:
+    """D100: current market regime per asset class + which strategies may trade in it (plain English)."""
+    rc = settings.regime
+    out = []
+    for ac, label in (("stock", "Stocks"), ("crypto", "Crypto")):
+        r = regs.get(f"regime_{ac}")
+        if not rc.enabled or not r:
+            out.append({"market": label, "text": "Not measured yet", "allowed": "", "tone": "neutral"})
+            continue
+        cell = f"{r['trend']}/{r['vol']}"
+        on = [strategy(n) for n, cells in (rc.matrix.get(ac) or {}).items() if cell in cells]
+        if ac == "stock" and rc.stock_watch_only:
+            allowed = "Watch only: stock signals are logged, no stock trades."
+        else:
+            allowed = ("Allowed now: " + ", ".join(on)) if on else "No strategy is allowed in this market, so no new trades."
+        out.append({"market": label, "benchmark": r.get("benchmark"), "trend": r["trend"], "vol": r["vol"],
+                    "text": r.get("text"), "as_of": r.get("as_of"), "allowed": allowed,
+                    "tone": {"bull": "good", "bear": "bad"}.get(r["trend"], "neutral")})
+    return out
+
+
 def build_view(settings: Settings, db_path=None, now: datetime | None = None, live_prices: bool = False) -> dict:
     now = now or datetime.now(timezone.utc)
     ctx = _Ctx(settings)
@@ -117,6 +138,8 @@ def build_view(settings: Settings, db_path=None, now: datetime | None = None, li
         executed = _rows(db, "SELECT ts, symbol, strategy, scan_run_id, entry_price, stop_loss, take_profit FROM signals "
                              "WHERE status='executed' ORDER BY id DESC LIMIT 50")
         eq = db.conn.execute("SELECT ts, equity_usd FROM equity_snapshots ORDER BY id").fetchall()
+        regs = {k: json.loads(v) for k, v in db.conn.execute(
+            "SELECT key, value_json FROM system_state WHERE key IN ('regime_stock', 'regime_crypto')").fetchall()}
     finally:
         db.close()
     executed_by_run: dict = {}
@@ -266,4 +289,5 @@ def build_view(settings: Settings, db_path=None, now: datetime | None = None, li
                      "scanned_24h_stocks": len(scanned_24h.get("stock", ())),
                      "scanned_24h_crypto": len(scanned_24h.get("crypto", ())), "scans_24h": len(runs)},
         "equity_curve": equity, "tv_symbols": tv, "errors": errors,
+        "regime": regime_view(settings, regs),
     }

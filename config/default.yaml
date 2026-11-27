@@ -19,8 +19,12 @@ execution:
   allow_short: false
   commission_per_trade_usd: 0.0
   stock_fee_bps: 0.0
-  crypto_fee_bps: 5.5      # Bybit USDT-perp taker, per side on full notional (entries/stops are market).
-  slippage_bps_stock: 5.0
+  crypto_fee_bps: 5.5      # Bybit USDT-perp TAKER (stop-loss / time / manual exits), per side on full notional
+  crypto_maker_fee_bps: 2.0          # D101: Bybit non-VIP maker - post-only limit entries + take-profits
+  slippage_bps_crypto_maker: 1.0
+  crypto_entry_order: limit          # limit at the bid; fills only if price trades down to it within the TTL
+  crypto_limit_ttl_minutes: 15
+  slippage_bps_stock: 3.0          # D101: liquid large caps (real bid/ask from the quote adds the spread)
   slippage_bps_crypto: 3.0      # BTC/ETH-class liquidity (global; not per-symbol)
   fractional_stocks: true
   stock_qty_step: 0.001
@@ -163,3 +167,27 @@ validation:
 http:
   timeout_seconds: 10
   user_agent: "ATLAS-Trading-AI/0.1 (paper-trading research; contact: set ATLAS_CONTACT_EMAIL)"
+
+# D100: market regime (daily SPY for stocks, BTC-USD for crypto) x strategy matrix from the backtest
+# (scripts/research/regime_matrix.py, stock_strats.py). A strategy only opens trades in the listed cells.
+regime:
+  enabled: true
+  stock_benchmark: SPY
+  crypto_benchmark: BTC-USD
+  # stocks: no intraday strategy had a positive out-of-sample edge -> watch-only (signals logged, no entries)
+  stock_watch_only: true
+  matrix:
+    crypto:
+      momentum_breakout:    [bear/high, bull/low]
+      sr_breakout:          [bear/high, bull/low]
+      volatility_expansion: [bear/high, bull/low]
+      volume_expansion:     [bear/high, bull/low]
+      liquidity_change:     [bear/high, bull/low]
+    stock:
+      opening_range_breakout: []
+      vwap_reclaim: []
+      momentum_breakout: []
+      relative_volume_anomaly: []
+      trend_continuation: []
+      sr_breakout: []
+      news_momentum: []

@@ -340,3 +340,71 @@ Dashboard errors (root causes):
 - "no column named is_complete": a local run of an older build against the renamed column (code uses
   `is_complete_candle`); nothing left to fix in code.
 - Migration 0012 marks these as resolved; the dashboard shows only unresolved errors from the last 24 h.
+
+
+## D100 — stock strategy research, market regime x strategy matrix, stocks watch-only (2026-11-27)
+
+Data: Alpaca free IEX bars for all 90 watchlist stocks: daily since 07/2020 and 15m for ~13 months
+(scripts/research/stock_data.py, stock_strats.py). $0 commission, slippage 2.5 bps for the 30 most liquid names
+and 6 bps for the rest (D101). Long only. Max 2 open positions. Split: daily strategies IS before 2025-01-01 / OOS
+after; intraday IS before 2026-07-01 / OOS after. R = entry - initial stop.
+
+Published strategies tested (adapted):
+- Connors RSI(2) (Connors & Alvarez, *Short Term Trading Strategies That Work*, 2008): close > SMA200 and
+  RSI(2) < 5/10/15, buy the close, exit when the close > SMA5. Added a k x ATR(10) stop and a 10-day max hold.
+  Best: RSI<5, 2 ATR. IS 273 trades, 61 %, +0.04 R. OOS 206 trades, 64 %, -0.01 R. Overnight hold.
+- IBS mean reversion (Pagonidis, "The IBS Effect", 2014): IBS < 0.1/0.2/0.3 above SMA200, exit at the first
+  close above the prior high. Best: IBS<0.2, 3 ATR. IS 401 trades, +0.035 R. OOS 246 trades, 65 %, +0.022 R.
+  Overnight hold.
+- Opening-range breakout on "stocks in play" (Zarattini, Barbon & Aziz 2024): bullish first 15m bar with
+  relative volume >= 1.5/2.5 or top-N by relative volume. Stop at the opening-range low or 0.1 x ATR. Flat at the
+  close. All variants negative IS (-0.01 to -0.44 R). Best OOS: +0.05 R (rvol 2.5, range-low stop). Not robust.
+- VWAP trend (Zarattini & Aziz 2023, "VWAP: the Holy Grail for Day Trading Systems"): 15m cross above the
+  session VWAP, exit below VWAP or at the close. -0.15 to -0.33 R in both IS and OOS.
+- Gap fill (Connors & Raschke, *Street Smarts*, 1995): gap down 0.5–3 % in an uptrend, target the prior close.
+  -0.02 to -0.13 R in both IS and OOS.
+
+Regime (app/regime.py; daily SPY for stocks, BTC-USD for crypto, completed bars only):
+- Trend: bull = close > SMA50 and SMA50 rising over 10 days; bear = the opposite; otherwise sideways.
+- Volatility: ATR14/close vs its 252-day median (high / low).
+
+Rule: a strategy is enabled in a regime only if that cell is positive both IS and OOS with >= 20 trades each.
+- Stocks: only overnight mean reversion qualifies. RSI(2) works in bull/high (OOS 60 trades, 78 %, +0.16 R) and
+  sideways/high (29 trades, +0.11 R); it loses in bear/high (-0.22 R) and bull/low (-0.07 R). IBS qualifies in
+  sideways/high (+0.18 R). ORB passes only in bull/low (+0.04 / +0.10 R) and fails at rvol 1.5 (-0.23 R): not
+  robust. No intraday strategy qualifies.
+- The bot is day-trade only (`stock_overnight_holding` is a Literal[False] safety invariant). The swing strategies
+  are therefore not shipped. `regime.stock_watch_only: true` keeps scanning and logging stock signals but opens
+  no stock trades. The matrix lists the old stock strategies as off in every regime.
+- Enabling RSI(2)/IBS needs explicit approval to allow overnight holds, plus daily-bar signals at the close.
+- Crypto (D99 set, D101 fees; IS = BTC/ETH/SOL 15m from 11/2024 to 05/2026; OOS = after that plus 40 pairs over
+  60 days):
+  - bear/high: OOS 25 trades, 56 %, +0.27 R.
+  - bull/low: OOS 56 trades, 59 %, +0.33 R.
+  - sideways/low: 5 trades, all lost.
+  - Other cells have < 20 trades.
+  - Enabled in bear/high and bull/low only. The matrix OOS is 81 trades, 58 %, +0.31 R, max DD 5 R, against
+    87 trades, +0.22 R, DD 11 R for all regimes.
+  - The crypto IS cells are thin (<= 18 trades), and choosing cells on OOS data is itself a form of fitting.
+    Treat this as provisional.
+- The dashboard shows a "Market mood" card. A blocked signal reads "Skipped: this strategy is off in sideways,
+  high-volatility markets."
+- The regime is read straight from the providers, so a bad daily payload can never trigger SAFE STATE.
+
+
+## D101 — cheapest realistic fees (2026-11-27)
+
+- Crypto (Bybit USDT perps, non-VIP):
+  - Entries are post-only limit buys at the bid: maker 0.02 %, about 1 bp slippage. Each entry fills only if a
+    later quote trades at or below the limit within 15 minutes; otherwise there is no trade.
+  - Take-profits are limit orders: maker 0.02 %, 1 bp.
+  - Stop-loss, time and manual exits are market orders: taker 0.055 %, 3 bps.
+- Stocks: Alpaca $0 commission. Slippage is 3 bps on top of the real bid/ask spread from the quote. The research
+  used 2.5 bps for the top-30 liquidity names and 6 bps for the rest.
+- The R:R gate still uses the old all-taker costs, which keeps entry quality conservative. With maker costs in
+  the gate, many marginal setups passed and expectancy collapsed:
+  - maker costs in the gate: IS 337 trades, +0.01 R; OOS 122 trades, +0.016 R.
+  - all-taker gate, maker fees charged: IS 62 trades, 53 %, +0.20 R; OOS 25 trades, 56 %, +0.27 R.
+  - Before (all taker): IS 63 trades, +0.13 R; OOS 26 trades, +0.28 R.
+- The backtest models the no-fill risk: the next bar must trade through the limit. Stocks: the change in
+  slippage moved results by at most about 0.03 R; no conclusion changed.

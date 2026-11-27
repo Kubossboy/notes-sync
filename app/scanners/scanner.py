@@ -37,6 +37,7 @@ class Scanner:
         self.news = news            # NewsEngine or None (news/sentiment components then unavailable)
         self.quant = quant if quant is not None else QuantEngine(settings, self.db)   # backtest validation
         self._market_trend: str | None = None
+        self._regime: dict | None = None
         self._bench_ret: float | None = None      # benchmark 20-bar return % (relative strength)
 
     # ------------------------------------------------------------------ public
@@ -62,6 +63,7 @@ class Scanner:
             news_info = (news_info or {}) | {"health": self.news.health(now)}
         self._bench_ret = None
         self._market_trend = self._benchmark_trend(asset_class, tf, now)
+        self._regime = self._current_regime(asset_class, now)
         results = []
         for sym in symbols:
             try:
@@ -72,13 +74,60 @@ class Scanner:
         summary = {"run_id": run_id, "scanner": asset_class.value, "mode": mode, "timeframe": tf,
                    "symbols": results,
                    "signals": sum(len(r.get("signals", [])) for r in results),
-                   "news": news_info, "market_trend": self._market_trend,
+                   "news": news_info, "market_trend": self._market_trend, "regime": self._regime,
                    "safe_state_halted": not self.engine.safe.trading_allowed()}
         self.db.conn.execute("UPDATE scan_runs SET finished_ts=?, summary_json=? WHERE id=?",
                              (utcnow(), json.dumps(summary, default=str), run_id))
         return summary
 
     # ------------------------------------------------------------------ internals
+    def _current_regime(self, ac: AssetClass, now) -> dict | None:
+        """D100: market-wide regime from completed daily bars of the benchmark (cached per UTC day)."""
+        rc = self.settings.regime
+        if not rc.enabled:
+            return None
+        key = f"regime_{ac.value}"
+        today = (now or datetime.now(timezone.utc)).date().isoformat()
+        cached = self.db.get_state(key)
+        if cached and cached.get("day") == today:
+            return cached
+        sym = rc.stock_benchmark if ac == AssetClass.STOCK else rc.crypto_benchmark
+        from app.regime import current
+        reg, err = None, "no source"
+        # straight from the providers: a context read, so a bad daily payload must never trip SAFE STATE
+        for name in self.engine.sources_for(ac):
+            try:
+                cs = self.engine.providers[name].fetch_candles(sym, "1d", 300)
+                df = to_frame(cs)
+                gaps = df.index.to_series().diff().dropna()
+                if len(df) < 70 or gaps.median() < timedelta(hours=20):
+                    err = f"{name}: not daily bars"
+                    continue
+                reg = current(df, now or datetime.now(timezone.utc))
+                if reg:
+                    break
+            except Exception as e:
+                err = f"{name}: {type(e).__name__}: {e}"
+        if not reg:
+            self.db.log_event("regime_unavailable", "scanner", f"{sym}: {err}"[:300], "warning")
+            return cached          # keep the last known regime rather than none
+        if reg:
+            reg = reg | {"day": today, "benchmark": sym}
+            self.db.set_state(key, reg)
+        return reg or cached
+
+    def _regime_problems(self, setup, ac: AssetClass) -> list[str]:
+        rc = self.settings.regime
+        out = []
+        if ac == AssetClass.STOCK and rc.stock_watch_only:
+            out.append("watch-only: stock entries paused (no stock strategy had a tested edge)")
+        reg = getattr(self, "_regime", None)
+        if rc.enabled and reg:
+            from app.regime import allowed
+            if not allowed(rc.matrix, ac.value, setup.strategy, reg):
+                out.append(f"regime {reg['trend']}/{reg['vol']}: strategy off in this market")
+        return out
+
     def _scan_symbol(self, sym, ac, tf, mode, run_id, now) -> dict:
         stock = ac == AssetClass.STOCK
         limit = min(1000, self.sc.lookback_bars * (3 if stock else 1))
@@ -174,7 +223,8 @@ class Scanner:
         quant = self.quant.assess(ctx, setup, plan, self._bench_ret)
         comps["quant"] = quant["score"]
         total, avail, on_avail = total_score(comps, self.settings)
-        problems = plan.problems + liq["problems"] + news_problems(ctx, setup) + quant["problems"]
+        problems = (plan.problems + liq["problems"] + news_problems(ctx, setup) + quant["problems"]
+                    + self._regime_problems(setup, ctx.asset_class))
         missing = [k for k, v in comps.items() if v is None]
         pending = dict(PENDING, quant=quant["reason"])
         if problems:

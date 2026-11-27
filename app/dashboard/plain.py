@@ -65,9 +65,18 @@ EXIT = {"take_profit": "Hit take-profit", "stop_loss": "Hit stop-loss", "time_ex
         "manual": "Closed manually", "liquidation": "Liquidated (leverage)", "trailing_stop": "Hit trailing stop",
         "eod": "End of trading day"}
 
+_REG = {"bull": "rising", "bear": "falling", "sideways": "sideways"}
+
 RULES: list[tuple[str, object]] = [
     (rf"net reward/risk {N} < {N} \(target capped by resistance {N}\)", lambda m, c: _rr(m, c, True)),
     (rf"net reward/risk {N} < {N}", lambda m, c: _rr(m, c, False)),
+    (r"regime (bull|bear|sideways)/(high|low): strategy off in this market",
+     lambda m, c: f"Skipped: this strategy is off in {_REG[m[1]]}, {m[2]}-volatility markets."),
+    (r"watch-only: stock entries paused.*",
+     lambda m, c: "Watch only: the bot logs stock signals but does not trade stocks (no stock strategy proved profitable in testing)."),
+    (rf"depth within 0\.5% {N} USD < {N}", lambda m, c: f"Too few buy/sell orders near the price "
+                                                      f"({_usd(m[1])} within 0.5%, needs {_usd(m[2])}), "
+                                                      f"so a trade could move the price."),
     (rf"avg \$vol/bar {N} < {N}", lambda m, c: f"Too little trading volume ({_usd(m[1])} per candle, needs {_usd(m[2])})."),
     (rf"^price {N} < {N}", lambda m, c: f"Stock is too cheap (under ${_f(m[2], 0)})."),
     (r"close not above (\d+)-?bar high",
