@@ -13,7 +13,26 @@
 html{background:#07070c}
 body{margin:0;background:radial-gradient(1200px 500px at 50% -200px,#2a0f3a 0%,var(--bg) 60%) fixed;color:var(--txt);
  font:15px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,Segoe UI,Roboto,sans-serif;-webkit-font-smoothing:antialiased}
-.wrap{max-width:760px;margin:0 auto;padding:16px 14px 40px}
+.wrap{max-width:760px;margin:0 auto;padding:16px 14px calc(96px + env(safe-area-inset-bottom,0px))}
+.pane{display:none}.pane.on{display:block}
+.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:80;display:flex;justify-content:center}
+.tabbar .bar{width:100%;max-width:760px;display:grid;grid-template-columns:1fr 1fr 1fr;align-items:end;
+ padding:6px 8px calc(8px + env(safe-area-inset-bottom,0px));background:rgba(10,10,16,.94);
+ backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1px solid var(--line);
+ box-shadow:0 -10px 28px rgba(0,0,0,.45)}
+.tabbar a{appearance:none;background:none;border:0;color:var(--mut);text-decoration:none;
+ display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 4px 4px;
+ font:inherit;font-size:11px;font-weight:700;letter-spacing:.2px;cursor:pointer;
+ -webkit-tap-highlight-color:transparent}
+.tabbar a svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.tabbar a.on{color:#fff}
+.tabbar a.home .ico{width:56px;height:56px;margin-top:-22px;border-radius:50%;display:grid;place-items:center;
+ border:3px solid var(--bg)}
+.tabbar a.home svg{width:24px;height:24px;stroke-width:2}
+.tabbar a.home.on .ico{background:var(--grad);box-shadow:0 8px 26px rgba(255,45,149,.7)}
+.tabbar a.home.on svg{stroke:#fff}
+.tabbar a.home:not(.on) .ico{background:#1c1c28;box-shadow:none}
+.tabbar a.home:not(.on) svg{stroke:var(--mut)}
 header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:8px;flex-wrap:wrap}
 .brand{font-weight:800;font-size:20px;letter-spacing:.5px;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
 .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;font-size:12px;font-weight:600;background:#1e1e2e;color:var(--mut)}
@@ -26,6 +45,7 @@ header{display:flex;justify-content:space-between;align-items:center;margin-bott
 .pnl{display:inline-block;padding:5px 12px;border-radius:999px;font-weight:700;font-size:14px}
 .pnl.up{background:rgba(34,227,154,.14);color:var(--up)}.pnl.dn{background:rgba(255,77,109,.15);color:var(--dn)}
 .sub{color:var(--mut);font-size:13px;margin-top:8px}
+#botstatus{margin:-2px 4px 14px;font-weight:600}
 #eq{height:170px;margin-top:12px}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
 .stat{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:12px}
@@ -101,6 +121,7 @@ th{color:var(--mut);font-weight:600;font-size:11.5px}td.r{white-space:normal;min
 <div class="wrap">
 <header><div class="brand">ATLAS · paper bot</div><div><span id="status" class="pill"><span class="dot"></span>loading…</span> <span id="mkt" class="pill"></span></div></header>
 
+<div id="tab-home" class="pane on">
 <section class="card hero">
   <div class="k">Account value</div>
   <div class="big" id="eqv">–</div>
@@ -109,40 +130,50 @@ th{color:var(--mut);font-weight:600;font-size:11.5px}td.r{white-space:normal;min
   <div id="eq"></div>
 </section>
 
-<div class="stats">
-  <div class="stat"><div class="k">Open trades</div><div class="v" id="s-pos">–</div><div class="s" id="s-pos-s"></div></div>
-  <div class="stat"><div class="k">Last scan</div><div class="v" id="s-scan">–</div><div class="s" id="s-scan-s"></div></div>
-  <div class="stat"><div class="k">Watching</div><div class="v" id="s-uni">–</div><div class="s" id="s-uni-s"></div></div>
-</div>
-
-<section class="card"><h2>Learning <span class="k">the bot reviews its own trades</span></h2><div id="learn"></div></section>
-
-<section class="card"><h2>News summary <span class="k" id="ns-k">AI (Qwen 3B), once per run</span></h2><div id="nsum"></div></section>
-
-<section class="card"><h2>Market mood <span class="k">decides which strategies may trade</span></h2><div id="regime"></div></section>
+<div class="sub" id="botstatus">–</div>
 
 <section class="card"><h2><span id="tc-title">Live trade</span><span class="tag" id="tc-tag">LIVE</span></h2><div id="tcs"></div></section>
 
-<section class="card"><h2>How the bot decides <span class="k">last 24 h · tap a step</span></h2><div id="pipe"></div></section>
+<section class="card"><h2>Market mood <span class="k">decides which strategies may trade</span></h2><div id="regime"></div></section>
+</div>
 
+<div id="tab-trades" class="pane">
 <section class="card"><h2>TradingView chart</h2>
   <div class="bar"><select id="sym"></select><select id="tf"><option value="5">5m</option><option value="15" selected>15m</option><option value="60">1h</option><option value="240">4h</option><option value="D">1D</option></select></div>
   <div id="tv"></div>
 </section>
 
-<section class="card"><h2>Last bot runs <span class="k">tap a run for details</span></h2><div id="runs"></div></section>
-
-<section class="card"><h2>Activity log <span class="k" id="log-sub"></span></h2><div class="log" id="log"></div></section>
+<section class="card"><h2>How the bot decides <span class="k">last 24 h · tap a step</span></h2><div id="pipe"></div></section>
 
 <details><summary>Open trades <span class="n" id="n-pos"></span></summary><div class="expl">Simulated trades the bot holds right now, with the price where it will cut the loss (stop-loss) and take the profit (take-profit).</div><div class="body" id="t-pos"></div></details>
 <details><summary>Closed trades <span class="n" id="n-tr"></span></summary><div class="expl">Finished trades: where the bot bought, where it sold and how much it made or lost.</div><div class="body" id="t-tr"></div></details>
 <details><summary>Best ideas &amp; near misses <span class="n" id="n-near"></span></summary><div class="expl">Setups that almost became trades in the last 24 h, best first, and why they were turned down.</div><div class="body" id="t-near"></div></details>
 <details><summary>Every symbol's latest check <span class="n" id="n-res"></span></summary><div class="expl">The most recent result for each stock and coin the bot watches, in plain words.</div><div class="body" id="t-res"></div></details>
+</div>
+
+<div id="tab-bot" class="pane">
+<section class="card"><h2>Last bot runs <span class="k">tap a run for details</span></h2><div id="runs"></div></section>
+
+<section class="card"><h2>Learning <span class="k">the bot reviews its own trades</span></h2><div id="learn"></div></section>
+
+<section class="card"><h2>News summary <span class="k" id="ns-k">AI (Qwen 3B), once per run</span></h2><div id="nsum"></div></section>
+
+<section class="card"><h2>Activity log <span class="k" id="log-sub"></span></h2><div class="log" id="log"></div></section>
+
 <details><summary>Errors <span class="n" id="n-err"></span></summary><div class="expl">Active technical problems from the last 24 hours. Fixed or older ones are hidden. The bot keeps running; one bad data source never stops it alone.</div><div class="body" id="t-err"></div></details>
+</div>
 
 <div class="foot">Simulation only (paper trading, $1,000 of virtual money) · US stocks + crypto · <span id="gen"></span><br>
 Charts: <a href="https://www.tradingview.com/" rel="noopener noreferrer" target="_blank">TradingView</a> (widget + Lightweight Charts™) · live crypto prices from Bybit</div>
 </div>
+
+<nav class="tabbar" aria-label="Pages">
+  <div class="bar">
+    <a href="#trades" data-tab="trades"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v4M7 14v7M5 7h4v7H5zM17 3v6M17 15v6M15 9h4v6h-4z"/></svg>Trades</a>
+    <a href="#home" data-tab="home" class="home on"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 4l8 7.5"/><path d="M6 10.5V20h12v-9.5"/></svg></span>Home</a>
+    <a href="#bot" data-tab="bot"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="8" width="14" height="10" rx="3"/><path d="M12 8V5"/><circle cx="9.5" cy="13" r="1"/><circle cx="14.5" cy="13" r="1"/><path d="M8 18v2M16 18v2"/></svg>Bot</a>
+  </div>
+</nav>
 
 <script src="https://s3.tradingview.com/tv.js"></script>
 <script src="lwc.js"></script>
@@ -156,7 +187,7 @@ const num=(v,d=2)=>v==null?"–":Number(v).toLocaleString("en-US",{maximumFracti
 const TZ={timeZone:"Europe/Prague"};
 const tm=t=>t?new Date(t).toLocaleString("en-GB",{...TZ,day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}):"–";
 const hm=t=>t?new Date(t).toLocaleTimeString("en-GB",{...TZ,hour:"2-digit",minute:"2-digit"}):"–";
-const ago=t=>{if(!t)return"";const m=Math.round((Date.now()-new Date(t))/60000);return m<1?"just now":m<60?`${m} min ago`:`${Math.round(m/60)} h ago`};
+const ago=t=>{if(!t)return"";const sec=Math.round((Date.now()-new Date(t))/1000);if(sec<60)return sec<=1?"just now":`${sec} s ago`;const m=Math.round(sec/60);return m<60?`${m} min ago`:`${Math.round(m/60)} h ago`};
 const ICONS={scan:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',filter:'<path d="M3 5h18l-7 8v6l-4 2v-8z"/>',
  brain:'<path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 6 1V5a3 3 0 0 0-3-1z"/><path d="M15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-6 1"/>',
  entry:'<path d="M4 17l6-6 4 4 7-8"/><path d="M15 7h6v6"/>',guard:'<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="m9 12 2 2 4-4"/>'};
@@ -167,9 +198,21 @@ const chartOpts=()=>({autoSize:true,layout:{background:{color:"transparent"},tex
  grid:{vertLines:{visible:false},horzLines:{color:"#1f1f30"}},rightPriceScale:{borderVisible:false},timeScale:{borderVisible:false,timeVisible:true},
  crosshair:{mode:0},handleScroll:true,handleScale:{pinch:true}});
 
-let tvSym=null,tvTf="15",eqChart=null,eqSeries=null,tcKey=null,tcState=[];
-function drawTV(){if(!window.TradingView||!tvSym)return;$("tv").innerHTML="";
- new TradingView.widget({container_id:"tv",symbol:tvSym,interval:tvTf,autosize:true,theme:"dark",style:"1",locale:"en",timezone:"Europe/Prague",hide_side_toolbar:true,allow_symbol_change:true,studies:["Volume@tv-basicstudies"]});}
+let tvSym=null,tvTf="15",eqChart=null,eqSeries=null,tcKey=null,tcState=[],tvDrawn=false;
+const TABS=["home","trades","bot"];
+function tabFromHash(){const h=(location.hash||"#home").replace(/^#/,"").toLowerCase();return TABS.includes(h)?h:"home";}
+function drawTV(){if(!window.TradingView||!tvSym||tabFromHash()!=="trades")return;$("tv").innerHTML="";
+ new TradingView.widget({container_id:"tv",symbol:tvSym,interval:tvTf,autosize:true,theme:"dark",style:"1",locale:"en",timezone:"Europe/Prague",hide_side_toolbar:true,allow_symbol_change:true,studies:["Volume@tv-basicstudies"]});tvDrawn=true;}
+function resizeVisible(){const t=tabFromHash();
+ requestAnimationFrame(()=>{if(t==="home"){const eq=$("eq");if(eqChart&&eq&&eq.clientWidth){eqChart.resize(eq.clientWidth,eq.clientHeight);eqChart.timeScale().fitContent();}
+  tcState.forEach(s=>{const el=$("tchart"+s.i);if(el&&el.clientWidth){s.chart.resize(el.clientWidth,el.clientHeight);s.chart.timeScale().fitContent();}});}
+  else if(t==="trades"){if(!tvDrawn||!$("tv").querySelector("iframe,canvas"))drawTV();else window.dispatchEvent(new Event("resize"));}});}
+function applyTab(scroll){const t=tabFromHash();
+ document.querySelectorAll(".pane").forEach(p=>p.classList.toggle("on",p.id==="tab-"+t));
+ document.querySelectorAll(".tabbar [data-tab]").forEach(b=>{const on=b.dataset.tab===t;b.classList.toggle("on",on);b.setAttribute("aria-current",on?"page":"false");});
+ if(scroll)window.scrollTo(0,0);resizeVisible();}
+if(!TABS.includes((location.hash||"").replace(/^#/,"").toLowerCase()))history.replaceState(null,"","#home");
+applyTab(false);window.addEventListener("hashchange",()=>applyTab(true));
 const bybitSym=s=>s.split("-")[0]+"USDT";
 async function bybit(sym){const r=await fetch(`https://api.bybit.com/v5/market/kline?category=linear&symbol=${bybitSym(sym)}&interval=5&limit=150`,{cache:"no-store"});
  const j=await r.json();return (j.result?.list||[]).map(k=>({time:Math.floor(+k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4]})).reverse();}
@@ -180,7 +223,7 @@ function buildTradeCharts(list){
  const key=JSON.stringify(list.map(t=>[t.symbol,t.opened_ts,t.open]));if(key===tcKey){list.forEach((t,i)=>Object.assign(tcState[i].t,t));return;}
  tcKey=key;tcState.forEach(s=>s.chart.remove());tcState=[];
  const live=list.some(t=>t.open);$("tc-title").textContent=live?"Live trade":"Last closed trade";$("tc-tag").textContent=live?"LIVE":"HISTORY";
- if(!list.length){$("tcs").innerHTML=empty("No trades yet. Pick any symbol in the TradingView chart below.");return;}
+ if(!list.length){$("tcs").innerHTML=empty("No trades yet. You can pick a symbol on the Trades tab to look at a chart.");return;}
  $("tcs").innerHTML=list.map((t,i)=>`<div class="tc"><div class="tch"><div><b>${esc(t.symbol)}</b> <span class="mut">· ${t.open?"long (betting on a rise)":"closed"} · ${esc(t.strategy||"")}${t.leverage?` · ${t.leverage}x leverage`:""}</span></div>
   <div><span class="k">${t.open?"Live profit/loss":"Profit/loss"}</span> <span class="lp" id="lp${i}">–</span></div></div>
   <div class="legend"><span><i style="background:#ff6ec7"></i>Bought at ${px(t.entry)}</span>${t.sl!=null?`<span><i style="background:#ff4d6d"></i>Stop-loss ${px(t.sl)}</span>`:""}${t.tp!=null?`<span><i style="background:#22e39a"></i>Take-profit ${px(t.tp)}</span>`:""}${t.exit!=null?`<span><i style="background:#8ab4ff"></i>Sold at ${px(t.exit)} (${esc(t.exit_reason||"")})</span>`:""}<span id="lu${i}"></span></div>
@@ -210,9 +253,8 @@ function render(d){
  $("eqv").textContent=usd(s.equity);
  const pct=s.start_equity?s.total_pnl/s.start_equity*100:0;const p=$("pnl");p.textContent=`${sg(s.total_pnl)}${usd(s.total_pnl)} (${sg(pct)}${pct.toFixed(1)}%)`;p.className="pnl "+cls(s.total_pnl);
  $("eqsub").innerHTML=`Started with ${usd(s.start_equity,0)} · today <span class="${cls(s.daily_pnl)}">${sg(s.daily_pnl)}${usd(s.daily_pnl)}</span>`;
- $("s-pos").textContent=`${s.open_positions} / ${s.max_open_positions}`;$("s-pos-s").textContent="max at once";
- $("s-scan").textContent=hm(s.last_scan);$("s-scan-s").textContent=ago(s.last_scan)+" (Prague)";
- $("s-uni").textContent=u.stocks+u.crypto;$("s-uni-s").textContent=`${u.stocks} stocks · ${u.crypto} crypto`;
+ const stLabel={running:"Running",paused:"Paused for safety","not running":"Not running"}[s.status]||s.status;
+ $("botstatus").textContent=s.last_scan?`${stLabel}, last scan ${ago(s.last_scan)}`:stLabel;
  $("pipe").innerHTML=d.pipeline.map(x=>`<details class="step" data-k="p-${x.key}"><summary><div class="ic"><svg viewBox="0 0 24 24">${ICONS[x.icon]||""}</svg></div>
   <div class="t"><div class="l">${esc(x.label)}</div><div class="x">${esc(x.latest)}</div></div><div class="cnt">${x.count}</div></summary>
   <div class="sbody"><div class="desc">${esc(x.desc)}</div><div class="items">${x.items.length?x.items.map(i=>`<div class="${i.tone}"><span class="ts">${hm(i.ts)}</span>${esc(i.text)}</div>`).join(""):empty("Nothing yet.")}</div></div></details>`).join("");
@@ -256,12 +298,13 @@ function render(d){
  $("gen").textContent="updated "+tm(d.generated_ts)+" (Prague time)";
  const sel=$("sym");if(!sel.options.length){const g={};d.tv_symbols.forEach(x=>{(g[x.group]=g[x.group]||[]).push(x)});
   sel.innerHTML=Object.entries(g).map(([k,v])=>`<optgroup label="${esc(k)}">${v.map(x=>`<option value="${esc(x.tv)}">${esc(x.label)}</option>`).join("")}</optgroup>`).join("");
-  tvSym=sel.value;drawTV();}
+  tvSym=sel.value;if(tabFromHash()==="trades")drawTV();}
  if(LC&&d.equity_curve.length){if(!eqChart){eqChart=LC.createChart($("eq"),Object.assign(chartOpts(),{rightPriceScale:{visible:false},leftPriceScale:{visible:false},timeScale:{visible:false},handleScroll:false,handleScale:false}));
   eqSeries=eqChart.addSeries(LC.AreaSeries,{lineColor:"#ff2d95",topColor:"rgba(255,45,149,.45)",bottomColor:"rgba(166,61,255,0)",lineWidth:3,priceLineVisible:false,lastValueVisible:false});}
   const seen=new Set();eqSeries.setData(d.equity_curve.map(([t,v])=>({time:Math.floor(new Date(t)/1000),value:v})).filter(x=>!seen.has(x.time)&&seen.add(x.time)).sort((a,b)=>a.time-b.time));eqChart.timeScale().fitContent();}
+ resizeVisible();
 }
-$("sym").onchange=e=>{tvSym=e.target.value;drawTV()};$("tf").onchange=e=>{tvTf=e.target.value;drawTV()};
+$("sym").onchange=e=>{tvSym=e.target.value;tvDrawn=false;drawTV()};$("tf").onchange=e=>{tvTf=e.target.value;tvDrawn=false;drawTV()};
 async function load(){try{const r=await fetch("data.json?"+Date.now(),{cache:"no-store"});render(await r.json())}catch(e){const s=$("status");s.textContent="data unavailable";s.className="pill bad";console.error(e)}}
 load();setInterval(load,60000);setInterval(()=>refreshTrades(false),5000);
 </script>
