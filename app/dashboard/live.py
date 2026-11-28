@@ -132,6 +132,94 @@ def learning_view(db) -> dict:
     return out
 
 
+def _agent_item(r: dict, verdicts: dict, cons: dict, final: dict, tag: str, ts, market: str, **extra) -> dict:
+    from app.agents.analysts import LABEL
+    order = ["market", "technical", "news", "strategy", "risk"]
+    agents = [{**{k: verdicts[a].get(k) for k in ("score", "stance", "reason", "hard")}, "agent": a,
+               "label": LABEL[a]} for a in order if a in verdicts]
+    by = final.get("by")
+    return {"symbol": r["symbol"], "market": market, "strategy": strategy(r["strategy"]), "tag": tag, "ts": ts,
+            "consensus": cons, "agents": agents,
+            "final": {"decision": final["decision"], "by": by, "by_label": LABEL.get(by, "Consensus" if by == "consensus"
+                      else "Scanner" if by == "scanner" else by), "reason": final.get("reason"),
+                      "size": final.get("mult")}} | extra
+
+
+def agents_view(db, settings: Settings, now: datetime, ctx: _Ctx | None = None) -> dict:
+    """D105 'Analyst team': stored reviews of recent candidates + the live/last trade + best near-misses (re-scored
+    now, labelled as previews). Read-only; the Risk Engine's verdict is always the last row."""
+    from app.agents import team as TM
+    from app.agents.analysts import Verdict
+    from app.agents.consensus import combine, final_call
+    a = settings.agents
+    out = {"enabled": a.enabled, "enforce": a.enforce, "items": [], "trade": None}
+    if not a.enabled:
+        return out
+    day_ago = (now - timedelta(hours=24)).isoformat()
+    mk = lambda ac: "Crypto" if ac == "crypto" else "Stock"
+    try:
+        stored = _rows(db, "SELECT * FROM agent_reviews WHERE ts >= ? ORDER BY ts DESC LIMIT 60", (day_ago,))
+    except Exception:
+        stored = []
+    seen = set()
+
+    def from_store(r, tag):
+        v = json.loads(r["verdicts_json"])
+        cons = {"score": r["consensus_score"], "stance": r["consensus_stance"], "enforced": bool(r["enforced"])}
+        fin = {"decision": r["final_decision"], "by": r["final_by"], "reason": r["final_reason"], "mult": r["size_mult"]}
+        return _agent_item(r, v, cons, fin, tag, r["ts"], mk(r["asset_class"]), signal_id=r["signal_id"])
+    # newest first, trades before no-trades, high consensus first within the day
+    top = sorted(stored, key=lambda r: (r["final_decision"] != "TRADE", -(r["consensus_score"] or 0)))
+    for r in top[:5]:
+        seen.add(r["signal_id"])
+        out["items"].append(from_store(r, "traded" if r["final_decision"] == "TRADE" else "candidate"))
+
+    def replay(sig, tag, risk: Verdict, final_override=None, **extra):
+        v = TM.run_analysts(TM.features(sig, db, settings, now))
+        cons = combine(v, a.enforce, a.block_below, a.downsize_below, a.downsize_mult)
+        fin = final_override or final_call(cons, risk if cons.blocked_by is None else None)
+        return _agent_item(sig, {**{k: x.as_dict() for k, x in v.items()}, "risk": risk.as_dict()}, cons.as_dict(),
+                           fin, tag, sig["ts"], mk(sig["asset_class"]), preview=True, **extra)
+    # live / last trade
+    pos = _rows(db, "SELECT p.*, s.evidence_json, s.validation_status AS vs FROM positions p JOIN signals s ON s.id = "
+                    "p.signal_id ORDER BY (p.status='open') DESC, COALESCE(p.closed_ts, p.opened_ts) DESC LIMIT 1")
+    if pos:
+        p0 = pos[0]
+        rv = db.conn.execute("SELECT * FROM agent_reviews WHERE signal_id=?", (p0["signal_id"],)).fetchone()
+        tag = "live trade" if p0["status"] == "open" else "last trade"
+        if rv:
+            out["trade"] = from_store(dict(rv), tag)
+        else:                        # opened before the team existed: re-score it now, say so
+            sig = {"id": p0["signal_id"], "symbol": p0["symbol"], "asset_class": p0["asset_class"], "strategy": p0["strategy"],
+                   "evidence_json": p0["evidence_json"], "validation_status": p0["vs"], "ts": p0["opened_ts"]}
+            sig = _Row(sig)
+            risk = Verdict("risk", 100, "APPROVE", "It passed the Risk Engine's checks when it was opened.", data={})
+            out["trade"] = replay(sig, tag, risk, {"decision": "TRADE", "by": "risk", "reason": risk.reason, "mult": 1.0},
+                                  note="Opened before the analyst team existed; the analysts are re-scoring it now.")
+        out["trade"]["pnl"] = p0.get("unrealized_pnl_usd") if p0["status"] == "open" else p0.get("realized_pnl_usd")
+        seen.add(p0["signal_id"])
+    # best near-misses (rejected before reaching the Risk Engine)
+    near = _rows(db, "SELECT s.*, sc.total_score FROM signals s LEFT JOIN signal_scores sc ON sc.signal_id = s.id "
+                     "WHERE s.status = 'rejected' AND s.ts >= ? AND s.evidence_json IS NOT NULL "
+                     "ORDER BY sc.total_score DESC LIMIT 40", (day_ago,))
+    taken = {i["symbol"] for i in out["items"]}
+    for sg in near:
+        if len([i for i in out["items"] if i["tag"] == "near miss"]) >= 3:
+            break
+        if sg["id"] in seen or sg["symbol"] in taken:
+            continue
+        taken.add(sg["symbol"])
+        why = (ctx.why(sg["reject_reason"], sg["asset_class"]) if ctx else sg["reject_reason"]) or "Stopped early."
+        risk = TM.not_reached(f"Not asked: the scanner stopped it first ({why})")
+        out["items"].append(replay(_Row(sg), "near miss", risk,
+                                   {"decision": "NO_TRADE", "by": "scanner", "reason": why, "mult": 0.0}))
+    return out
+
+
+class _Row(dict):
+    """dict that also answers .keys() like sqlite3.Row (for TM.features on re-scored rows)."""
+
+
 def llm_view(settings: Settings, regs: dict) -> dict:
     b = regs.get("llm_budget") or {}
     return {"enabled": settings.llm.enabled, "spent_s": b.get("spent"), "budget_s": settings.llm.budget_s,
@@ -175,6 +263,7 @@ def build_view(settings: Settings, db_path=None, now: datetime | None = None, li
                              "WHERE status='executed' ORDER BY id DESC LIMIT 50")
         eq = db.conn.execute("SELECT ts, equity_usd FROM equity_snapshots ORDER BY id").fetchall()
         learning = learning_view(db)
+        agents = agents_view(db, settings, now, ctx)
         whys = {r["symbol"]: json.loads(r["evidence_json"] or "{}").get("why") for r in _rows(
             db, "SELECT p.symbol, s.evidence_json FROM positions p JOIN signals s ON s.id = p.signal_id "
                 "WHERE p.status = 'open'", ())}
@@ -343,4 +432,5 @@ def build_view(settings: Settings, db_path=None, now: datetime | None = None, li
                                                "model": summ.get("model")},
         "llm": llm_view(settings, regs),
         "learning": learning,
+        "agents": agents,
     }

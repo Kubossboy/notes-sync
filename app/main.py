@@ -303,7 +303,7 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps({"out": a.out, "project": cfg["project"], "path": "/" + cfg["slug"] + "/"}))
         elif a.cmd == "prune":
             from app.database.retention import prune
-            print(json.dumps(prune(ctx.db)))
+            print(json.dumps(prune(ctx.db, agent_days=ctx.settings.agents.retention_days)))
         elif a.cmd == "learn":
             if a.what == "weekly":
                 from app.learning.tuner import weekly

@@ -380,6 +380,17 @@ class LLMSection(_Strict):
     check_max_tokens: int = 60
 
 
+class AgentsSection(_Strict):
+    """D105 multi-agent team. Clear rejects always remove a trade; the score only gates when `enforce` (advisory by
+    default: the out-of-sample check showed no edge in the score). Sizes can only shrink; the Risk Engine decides last."""
+    enabled: bool = False
+    enforce: bool = False
+    block_below: float = Field(35, ge=0, le=100)
+    downsize_below: float = Field(50, ge=0, le=100)
+    downsize_mult: float = Field(0.5, gt=0, le=1)
+    retention_days: float = Field(14, gt=0)
+
+
 class Settings(_Strict):
     app: AppSection = AppSection()
     paths: PathsSection = PathsSection()
@@ -397,6 +408,7 @@ class Settings(_Strict):
     llm: LLMSection = LLMSection()
     swing: SwingSection = SwingSection()
     learning: LearningSection = LearningSection()
+    agents: AgentsSection = AgentsSection()
 
     def config_hash(self) -> str:
         blob = json.dumps(self.model_dump(mode="json"), sort_keys=True).encode()

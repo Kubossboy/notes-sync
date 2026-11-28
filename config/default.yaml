@@ -217,3 +217,13 @@ learning:
   enabled: true
   window: 20
   pause_consec_losses: 6
+
+# D105: multi-agent team (Market / Technical / News / Strategy analysts -> consensus -> Risk Engine decides last).
+# Clear rejects always remove a trade; the 0-100 score only gates when enforce: true (advisory: the OOS check showed no edge).
+agents:
+  enabled: true
+  enforce: false
+  block_below: 35
+  downsize_below: 50
+  downsize_mult: 0.5
+  retention_days: 14

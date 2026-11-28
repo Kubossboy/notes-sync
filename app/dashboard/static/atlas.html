@@ -152,6 +152,30 @@ td.r{min-width:0;color:var(--mut)}
 .why{font-size:13px;color:#d6d6e4;margin-top:6px;overflow-wrap:break-word;line-height:1.45}
 .legend2{color:var(--mut);font-size:12px;background:#1a1a29;border-radius:12px;padding:8px 11px;margin-bottom:8px;line-height:1.45}
 
+/* D105 analyst team */
+.team{background:var(--card2);border:1px solid var(--line);border-radius:var(--radius-sm);margin:0 0 8px;overflow:hidden}
+.team>summary{display:block;padding:12px 36px 12px 13px;position:relative;min-height:44px}
+.team>summary:after{position:absolute;right:12px;top:14px}
+.team .th{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px}
+.team .th b{font-size:16px;font-weight:800}.team .th .meta{color:var(--mut);font-size:12px;line-height:1.35}
+.team .th>div:first-child{min-width:0}
+.tag2{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;border-radius:999px;background:#25253a;color:#c9c9da;margin-left:6px;vertical-align:middle}
+.chips{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px}
+.chip{border-radius:10px;padding:5px 2px 4px;text-align:center;font-size:10px;font-weight:700;line-height:1.2;background:#25253a;color:#c9c9da;letter-spacing:.02em}
+.chip b{display:block;font-size:15px;font-weight:800;font-variant-numeric:tabular-nums}
+.chip.good{background:rgba(34,227,154,.14);color:var(--up)}.chip.bad{background:rgba(255,77,109,.16);color:var(--dn)}
+.chip.last{box-shadow:inset 0 0 0 1px rgba(255,45,149,.55)}
+.team .tb{padding:0 13px 12px}
+.arow{padding:10px 0;border-top:1px solid var(--line)}
+.arow .ah{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.arow .ah b{font-size:13.5px}.arow .ah .badge{flex:0 0 auto}
+.arow .ar{color:#d6d6e4;font-size:13px;margin-top:4px;line-height:1.45;overflow-wrap:break-word}
+.final{margin-top:6px;padding:10px 12px;border-radius:12px;font-size:13px;line-height:1.45;overflow-wrap:break-word}
+.final.good{background:rgba(34,227,154,.12);border:1px solid rgba(34,227,154,.35)}
+.final.bad{background:rgba(255,77,109,.10);border:1px solid rgba(255,77,109,.30)}
+.team .note{color:var(--mut);font-size:12px;margin-top:8px;line-height:1.4}
+.sec-t{font-size:11px;font-weight:800;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;margin:4px 0 8px}
+
 .skel{display:inline-block;border-radius:8px;color:transparent!important;background:linear-gradient(90deg,#1a1a26 25%,#2a2a3c 50%,#1a1a26 75%);
  background-size:200% 100%;animation:skel 1.2s ease-in-out infinite;user-select:none}
 .skel-eq{width:11.5rem;height:1.1em}.skel-pnl{width:7rem;height:1em}.skel-line{width:100%;height:10px;margin:8px 0}
@@ -188,6 +212,9 @@ td.r{min-width:0;color:var(--mut)}
 </div>
 
 <div id="tab-trades" class="pane">
+<section class="card"><h2>Analyst team <span class="k">Risk Engine decides last</span></h2>
+  <div class="sub" id="team-expl" style="margin:-4px 0 12px"></div><div id="team"></div></section>
+
 <section class="card"><h2>TradingView chart</h2>
   <div class="pick"><select id="sym"></select><select id="tf"><option value="5">5m</option><option value="15" selected>15m</option><option value="60">1h</option><option value="240">4h</option><option value="D">1D</option></select></div>
   <div id="tv"></div>
@@ -242,6 +269,29 @@ const ICONS={scan:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',fi
  brain:'<path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 6 1V5a3 3 0 0 0-3-1z"/><path d="M15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-6 1"/>',
  entry:'<path d="M4 17l6-6 4 4 7-8"/><path d="M15 7h6v6"/>',guard:'<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="m9 12 2 2 4-4"/>'};
 const open_={};function keepOpen(root){root.querySelectorAll("details[data-k]").forEach(d=>{if(open_[d.dataset.k])d.open=true;d.ontoggle=()=>{open_[d.dataset.k]=d.open}})}
+
+const STANCE={APPROVE:["good","Approve"],NEUTRAL:["neutral","Neutral"],REJECT:["bad","Reject"]};
+const SHORT={"Market Analyst":"Market","Technical Analyst":"Technical","News Analyst":"News","Strategy Analyst":"Strategy","Risk Engine":"Risk"};
+function teamItem(it,key){
+ const f=it.final,tone=f.decision==="TRADE"?"good":"bad",c=it.consensus||{};
+ const chips=it.agents.map(a=>{const na=a.label==="Risk Engine"&&a.stance==="NEUTRAL";const t=na?"":(STANCE[a.stance]||["neutral"])[0];
+  return`<div class="chip ${t}${a.label==="Risk Engine"?" last":""}"><b>${na?"–":a.score}</b>${SHORT[a.label]||esc(a.label)}</div>`}).join("");
+ const rows=it.agents.map(a=>{const na=a.label==="Risk Engine"&&a.stance==="NEUTRAL";const st=STANCE[a.stance]||STANCE.NEUTRAL;
+  return`<div class="arow"><div class="ah"><b>${esc(a.label)}</b><span class="badge ${na?"neutral":st[0]}">${na?"Not asked":st[1]+" · "+a.score}</span></div><div class="ar">${esc(a.reason||"")}</div></div>`}).join("");
+ const verdict=f.decision==="TRADE"?`Traded${f.size!=null&&f.size<1?" at "+Math.round(f.size*100)+"% size":""}. The Risk Engine approved it.`
+  :`No trade. ${esc(f.by_label||"")}: ${esc(f.reason||"")}`;
+ const cons=c.score!=null?`Team score ${c.score}/100`:"";
+ return`<details class="team" data-k="${key}"><summary><div class="th"><div><b>${esc(it.symbol)}</b><span class="tag2">${esc(it.tag)}</span><div class="meta">${esc(it.market)} · ${esc(it.strategy)}${it.ts?" · "+tm(it.ts):""}</div></div>
+  <span class="badge ${tone}">${f.decision==="TRADE"?"Traded":"No trade"}</span></div><div class="chips">${chips}</div></summary>
+  <div class="tb">${rows}<div class="final ${tone}"><b>Final call:</b> ${verdict}${cons?`<div class="mut" style="margin-top:2px">${cons}</div>`:""}</div>${it.note?`<div class="note">${esc(it.note)}</div>`:""}</div></details>`}
+function renderTeam(a){
+ const box=$("team");if(!a||!a.enabled){$("team-expl").textContent="";box.innerHTML=empty("Analyst team is off","It can be switched on in the bot settings.");return}
+ $("team-expl").textContent="Four analysts score each idea 0–100. A clear reject from any of them stops the trade."+(a.enforce?"":" The score itself is advisory.")+" The Risk Engine decides last and can't be overruled.";
+ let h="";
+ if(a.trade)h+=`<div class="sec-t">${esc(a.trade.tag==="live trade"?"Live trade":"Last trade")}</div>`+teamItem(a.trade,"a-trade");
+ const rest=a.items.filter(i=>!a.trade||i.signal_id!==a.trade.signal_id);
+ if(rest.length)h+=`<div class="sec-t">Top candidates, last 24 h</div>`+rest.map((i,n)=>teamItem(i,"a-"+(i.signal_id||i.symbol)+"-"+n)).join("");
+ box.innerHTML=h||empty("No candidates yet","Ideas that reach the team will be scored here.");keepOpen(box)}
 const kv=pairs=>`<div class="kv">${pairs.map(([k,v,c])=>`<div><span>${k}</span><b class="${c||""}">${v}</b></div>`).join("")}</div>`;
 const empty=(t,h)=>`<div class="empty"><div class="empty-t">${esc(t)}</div>${h?`<div class="empty-h">${esc(h)}</div>`:""}</div>`;
 const chartOpts=()=>({autoSize:true,layout:{background:{color:"transparent"},textColor:"#9393a8",attributionLogo:false},
@@ -314,7 +364,7 @@ function render(d){
  $("pipe").innerHTML=d.pipeline.map(x=>`<details class="step" data-k="p-${x.key}"><summary><div class="ic"><svg viewBox="0 0 24 24">${ICONS[x.icon]||""}</svg></div>
   <div class="t"><div class="l">${esc(x.label)}</div><div class="x">${esc(x.latest)}</div></div><div class="cnt">${x.count}</div></summary>
   <div class="sbody"><div class="desc">${esc(x.desc)}</div><div class="items">${x.items.length?x.items.map(i=>`<div class="${i.tone}"><span class="ts">${hm(i.ts)}</span>${esc(i.text)}</div>`).join(""):empty("Nothing yet","This step will fill in after the next run.")}</div></div></details>`).join("");
- keepOpen($("pipe"));
+ keepOpen($("pipe"));renderTeam(d.agents);
  $("runs").innerHTML=d.cycles.length?d.cycles.map((c,i)=>`<details class="run" data-k="r-${c.ts}"><summary>${hm(c.ts)} · ${c.pairs} symbols · ${c.signals} idea${c.signals===1?"":"s"} · <span class="${c.entries?"up":""}">${c.entries}&nbsp;trade${c.entries===1?"":"s"}</span></summary><div class="rb">
   <div class="mut">Checked ${esc(c.what)}.</div>
   ${c.entered.length?`<h4>Trades opened</h4><ul>${c.entered.map(e=>`<li class="up">Bought ${esc(e.symbol)} (${esc(e.strategy)}) at ${px(e.entry)}, stop-loss ${px(e.sl)}, take-profit ${px(e.tp)}</li>`).join("")}</ul>`:""}

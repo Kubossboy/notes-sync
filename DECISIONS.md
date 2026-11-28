@@ -478,3 +478,36 @@ Rule: a strategy is enabled in a regime only if that cell is positive both IS an
   the raw intraday candle cache. Each run now prunes candle observations older than 3 days and per-symbol scan
   summaries older than 3 days, then VACUUMs (`app/database/retention.py`, `app.main prune`): 98 -> 49 MB. Trades,
   signals, reviews, the risk journal and news are never pruned. Also fixed `learn export` (local `Path` shadowing).
+
+## D105 — Multi-agent analysis: four analysts, a consensus, and the Risk Engine's final word (2026-11-28)
+- **Analysts** (`app/agents/analysts.py`, pure deterministic functions, no extra LLM calls): each returns `{score 0-100,
+  stance APPROVE (>=60) / NEUTRAL / REJECT (<40), plain-English reason}`.
+  *Market* (D100 regime allowed?, regime trend, benchmark trend, breadth = share of watched symbols trending up);
+  *Technical* (net R:R, trend, RSI, volume ratio, room to the next resistance in ATR; the overnight dip-buy ignores
+  trend / RSI because it buys weakness on purpose); *News* (FinBERT tone, verified catalysts / negatives, macro, and the
+  D102 Qwen APPROVE / VETO, no new call); *Strategy* (D104 scorecard: paused / reduced / healthy, validation state,
+  recent R and loss streak). A **hard** REJECT is a clear concrete reason (regime off, resistance on the entry or
+  R:R < 0.8, Qwen veto / verified negative news / FinBERT <= -0.35, strategy paused).
+- **Consensus** (`app/agents/consensus.py`): weighted score Technical 35 % / Market 25 % / Strategy 20 % / News 20 %.
+  Any hard REJECT from these four removes the trade (always on). With `agents.enforce: true` the score also gates
+  (< 35 removes, < 50 halves). The size multiplier is the min of the strategy scorecard multiplier and the consensus
+  downsize and is clamped to <= 1; analysts can only remove or shrink, never enlarge, add, waive a check or touch a
+  stop / target / leverage.
+- **Risk Engine last** (`PaperTrader.execute_signal`): whatever survives goes to the unchanged `RiskEngine.evaluate`,
+  and its verdict (all hard rails: leverage, stop-before-liquidation, exposure, drawdown floor, daily loss, max
+  positions, gap / overnight rules, R:R) is the fifth verdict and the final call. Nothing opens a position without its
+  approval; a team failure just falls through to the Risk Engine alone (fail closed on the engine, never open on the team).
+- **Persistence:** table `agent_reviews` (one row per candidate: five verdicts as JSON, consensus, final decision / by /
+  why); pruned with the state DB (`agents.retention_days: 14`, `app.main prune`). Candidates stopped before the team
+  (scanner rejects) are re-scored for the dashboard as "near miss" previews, not stored.
+- **Out-of-sample sanity check** (`scripts/research/agents_oos.py`; Market + Technical reconstructed from history, News /
+  Strategy neutral, current live parameters, regime-gated, costs included, same portfolio replay):
+  crypto (15m, 60 d, OOS = last 20 d): before and after the team **56 -> 56 trades in-sample, +0.33 R; 25 -> 25 OOS
+  trades, +0.27 R** (no trade is cut, hard rejects never fire because the scanner already enforces those rules); overnight
+  dip-buy (daily, 365 d): **101 -> 101 in-sample, +0.20 R; 46 -> 46 OOS, +0.23 R**. The score itself is NOT predictive:
+  raw crypto setups with team score < 60 averaged +0.63 R (18), 60-70 +0.36 R (68), 70+ +0.10 R (33). So the score
+  must not gate trades: **default is advisory (`enforce: false`)**, only clear rejects act. Revisit with live data.
+- **Dashboard (Trades tab):** "Analyst team" card (first on the tab): live / last trade and the top candidates of the
+  last 24 h, five chips (score + colour), expand for each reason and the Risk Engine's final call.
+- **Tests:** `tests/test_d105.py` (risk veto always wins, analysts cannot loosen rails or raise size, consensus
+  weights / hard rejects / advisory vs enforced, persistence + pruning, dashboard view).

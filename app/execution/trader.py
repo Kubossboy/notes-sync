@@ -296,7 +296,57 @@ class PaperTrader:
             f"SELECT s.*, sc.total_score FROM signals s JOIN signal_scores sc ON sc.signal_id = s.id "
             f"WHERE s.id IN ({qm}) AND s.status = 'new' ORDER BY s.reward_risk DESC", ids).fetchall()
 
-    def execute_signal(self, row, now: datetime) -> dict:
+    # ------------------------------------------------------------------ D105 multi-agent team
+    def _breadth(self, run_ids: list[int]) -> None:
+        if not self.s.agents.enabled or not run_ids:
+            return
+        try:
+            out = self.db.get_state("agents_breadth") or {}
+            for rid in run_ids:
+                r = self.db.conn.execute("SELECT scanner, summary_json FROM scan_runs WHERE id=?", (rid,)).fetchone()
+                syms = [x for x in json.loads(r["summary_json"] or "{}").get("symbols", []) if x.get("trend")] if r else []
+                if r and len(syms) >= 5:
+                    out[r["scanner"]] = round(sum(1 for x in syms if x["trend"] == "up") / len(syms), 3)
+            self.db.set_state("agents_breadth", out)
+        except Exception as e:
+            self.db.log_error("agents", e)
+
+    def team_review(self, row, now: datetime, llm: dict | None = None):
+        """Run the four analysts + consensus. Never raises: any failure -> None (the trade goes on to the Risk Engine
+        exactly as before; the Risk Engine is the only gate that can approve)."""
+        if not self.s.agents.enabled:
+            return None
+        try:
+            from app.agents import team as TM
+            from app.agents.consensus import combine
+            a = self.s.agents
+            v = TM.run_analysts(TM.features(row, self.db, self.s, now, llm))
+            cons = combine(v, a.enforce, a.block_below, a.downsize_below, a.downsize_mult)
+            return v, cons
+        except Exception as e:
+            self.db.log_error("agents", e)
+            return None
+
+    def team_record(self, row, now: datetime, tr, risk_v=None, why: str | None = None) -> None:
+        """Persist the verdicts of one candidate (+ the Risk Engine's verdict, or why it was not reached)."""
+        if tr is None:
+            return
+        try:
+            from app.agents import team as TM
+            from app.agents.consensus import final_call
+            v, cons = tr
+            if risk_v is None:
+                risk_v = TM.not_reached(why or "Not reached: the team stopped this trade first.")
+                fin = final_call(cons, None)
+                if cons.blocked_by is None:
+                    fin = {"decision": "NO_TRADE", "by": "risk", "reason": why or fin["reason"], "mult": 0.0}
+            else:
+                fin = final_call(cons, risk_v)
+            TM.persist(self.db, row, now, dict(v, risk=risk_v), cons, fin)
+        except Exception as e:
+            self.db.log_error("agents", e)
+
+    def execute_signal(self, row, now: datetime, llm: dict | None = None) -> dict:
         p = Proposal.from_signal_row(row)
         if self.s.learning.enabled:                  # D104: scorecard may pause a strategy or shrink its size
             from app.learning.scorecard import status
@@ -305,11 +355,23 @@ class PaperTrader:
                 why = f"learning: strategy paused ({sc.get('why') or 'poor recent results'})"
                 self.db.insert("strategy_decisions", {"ts": now.isoformat(), "signal_id": p.signal_id,
                                                       "decision": "reject", "reason": why})
+                self.team_record(row, now, self.team_review(row, now, llm))      # D105: the Strategy Analyst's veto
                 return {"signal_id": p.signal_id, "symbol": p.symbol, "strategy": p.strategy, "approved": False,
                         "reason": why, "qty": 0, "planned_risk_usd": 0, "rr_net": None}
             if sc["state"] == "reduced":
                 import dataclasses
                 p = dataclasses.replace(p, risk_mult=min(1.0, float(sc.get("mult") or 1.0)))
+        tr = self.team_review(row, now, llm)               # D105: analysts may only remove / shrink a trade
+        if tr is not None:
+            import dataclasses
+            cons = tr[1]
+            if cons.blocked_by is not None:
+                self.team_record(row, now, tr)
+                self.db.insert("strategy_decisions", {"ts": now.isoformat(), "signal_id": p.signal_id,
+                                                      "decision": "reject", "reason": f"team: {cons.reason}"})
+                return {"signal_id": p.signal_id, "symbol": p.symbol, "strategy": p.strategy, "approved": False,
+                        "reason": f"team: {cons.reason}", "qty": 0, "planned_risk_usd": 0, "rr_net": None}
+            p = dataclasses.replace(p, risk_mult=min(1.0, p.risk_mult, max(0.0, cons.mult)))
         if p.asset_class == AssetClass.STOCK:
             from app.data.calendar import regular_session_open
             if not regular_session_open(now):
@@ -317,6 +379,7 @@ class PaperTrader:
                 # (right after the close Alpaca's book is empty, which used to show up as data errors)
                 self.db.insert("strategy_decisions", {"ts": now.isoformat(), "signal_id": p.signal_id,
                                                       "decision": "reject", "reason": "risk: market closed"})
+                self.team_record(row, now, tr, None, "Stock market is closed, so the Risk Engine blocked it.")
                 return {"signal_id": p.signal_id, "symbol": p.symbol, "strategy": p.strategy, "approved": False,
                         "reason": "market closed", "qty": 0, "planned_risk_usd": 0, "rr_net": None}
         try:
@@ -336,6 +399,7 @@ class PaperTrader:
             if n_sw >= self.s.swing.max_positions:
                 self.db.insert("strategy_decisions", {"ts": now.isoformat(), "signal_id": p.signal_id,
                                                       "decision": "reject", "reason": "swing: max overnight positions"})
+                self.team_record(row, now, tr, None, "Already at the maximum number of overnight positions.")
                 return {"signal_id": p.signal_id, "symbol": p.symbol, "strategy": p.strategy, "approved": False,
                         "reason": "max overnight positions", "qty": 0, "planned_risk_usd": 0, "rr_net": None}
         if LV.lev(self.s) > 1 and q is not None and p.stop and p.target and p.entry and not swing:   # D94 scalp levels
@@ -355,6 +419,9 @@ class PaperTrader:
                 st_, tg_ = LV.scalp_levels(self.s, fill, p.stop, p.target, a15)
                 p = dataclasses.replace(p, stop=st_, target=tg_, leverage=LV.lev(self.s))
         d = self.risk.evaluate(p, q, now)
+        if tr is not None:                                  # D105: the Risk Engine's verdict is the final word
+            from app.agents.team import risk_verdict
+            self.team_record(row, now, tr, risk_verdict(d, p))
         res = {"signal_id": p.signal_id, "symbol": p.symbol, "strategy": p.strategy, "approved": d.approved,
                "evaluation_id": d.evaluation_id, "reason": d.reason, "qty": d.quantity,
                "planned_risk_usd": d.planned_risk_usd, "rr_net": d.rr_net}
@@ -413,6 +480,7 @@ class PaperTrader:
                 run_ids += sw
             except Exception as e:
                 self.db.log_error("swing", e)
+            self._breadth(run_ids)                                  # D105: share of watched symbols trending up
             seen, checked = set(), 0
             for row in list(self.pending_signals(now)) + list(self.candidates(run_ids)):
                 if row["id"] in seen:
@@ -420,14 +488,17 @@ class PaperTrader:
                 seen.add(row["id"])
                 if not self.safe.trading_allowed():
                     break
+                v = None
                 if checked < self.s.llm.max_candidates:            # D102: AI final check, can only veto
                     checked += 1
                     v = self._llm_check(row, now)
                     if v and v["decision"] == "VETO":
+                        self.team_record(row, now, self.team_review(row, now, v), None,
+                                         "Not reached: the AI news check vetoed it first.")
                         report["executions"].append({"signal_id": row["id"], "symbol": row["symbol"],
                                                      "approved": False, "reason": f"AI veto: {v['reason']}"})
                         continue
-                report["executions"].append(self.execute_signal(row, now))
+                report["executions"].append(self.execute_signal(row, now, v))
         if self.s.llm.enabled:
             try:
                 from app.llm import LocalLLM

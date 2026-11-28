@@ -6,12 +6,14 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 
-def prune(db, days: float = 3.0, now: datetime | None = None) -> dict:
+def prune(db, days: float = 3.0, now: datetime | None = None, agent_days: float = 14.0) -> dict:
     cut = ((now or datetime.now(timezone.utc)) - timedelta(days=days)).isoformat()
     c1 = db.conn.execute("DELETE FROM market_observations WHERE kind='candle' AND timeframe IN ('1m','5m','15m','1h') "
                          "AND source_ts < ?", (cut,)).rowcount
     c2 = db.conn.execute("UPDATE scan_runs SET summary_json=NULL WHERE started_ts < ? AND summary_json IS NOT NULL",
                          (cut,)).rowcount
+    acut = ((now or datetime.now(timezone.utc)) - timedelta(days=agent_days)).isoformat()
+    c3 = db.conn.execute("DELETE FROM agent_reviews WHERE ts < ?", (acut,)).rowcount     # D105
     db.conn.commit()
     db.conn.execute("VACUUM")
-    return {"candles_deleted": c1, "scan_summaries_cleared": c2}
+    return {"candles_deleted": c1, "scan_summaries_cleared": c2, "agent_reviews_deleted": c3}
